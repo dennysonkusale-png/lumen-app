@@ -285,8 +285,12 @@ class _EditorScreenState extends State<EditorScreen> {
                         color: const Color(0xE62A1218),
                         shape: BoxShape.circle,
                         border: Border.all(color: const Color(0xFFFF6B6B), width: 1.5),
-                        boxShadow: const <BoxShadow>[
-                          BoxShadow(color: Color(0x66000000), blurRadius: 12, offset: Offset(0, 4)),
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(
+                            color: const Color(0x66000000),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
                         ],
                       ),
                       child: const Icon(Icons.delete_outline,
