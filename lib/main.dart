@@ -1,0 +1,761 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+
+import 'model.dart';
+import 'pipeline.dart';
+import 'state.dart';
+import 'ui/sheets.dart';
+import 'ui/widgets.dart';
+
+void main() {
+  runApp(const LumenApp());
+}
+
+class LumenApp extends StatelessWidget {
+  const LumenApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Lumen',
+      debugShowCheckedModeBanner: false,
+      theme: buildTheme(),
+      home: const EditorScreen(),
+    );
+  }
+}
+
+class EditorScreen extends StatefulWidget {
+  const EditorScreen({super.key});
+
+  @override
+  State<EditorScreen> createState() => _EditorScreenState();
+}
+
+class _EditorScreenState extends State<EditorScreen> {
+  final EditorController c = EditorController();
+
+  double _startZoom = 1;
+  Offset _startPan = Offset.zero;
+  DocPoint? _dragLayerStart;
+  Layer? _dragLayer;
+  Offset _startFocal = Offset.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    c.addListener(_onChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) => c.loadDemo());
+  }
+
+  @override
+  void dispose() {
+    c.removeListener(_onChange);
+    c.dispose();
+    super.dispose();
+  }
+
+  void _onChange() {
+    if (mounted) setState(() {});
+  }
+
+  /* --------------------------------------------------------------------- */
+
+  Future<void> _pick(ImageSource source) async {
+    try {
+      final XFile? file = await ImagePicker().pickImage(source: source);
+      if (file == null) return;
+      final Uint8List bytes = await file.readAsBytes();
+      await c.loadBytes(bytes, file.name.replaceAll(RegExp(r'\.[^.]+$'), ''));
+    } catch (error) {
+      _toast('Could not open that photo');
+      debugPrint('pick failed: $error');
+    }
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(SnackBar(
+        content: Text(message, style: const TextStyle(fontSize: 12.5)),
+        backgroundColor: const Color(0xFF22222B),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(milliseconds: 1600),
+      ));
+  }
+
+  /* --------------------------------------------------------------------- */
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      body: SafeArea(
+        child: Stack(
+          children: <Widget>[
+            Column(
+              children: <Widget>[
+                _buildTopBar(),
+                Expanded(child: _buildViewport()),
+                if (c.tool != null) _buildSheet(),
+                _buildRail(),
+              ],
+            ),
+            if (c.busy)
+              Container(
+                color: const Color(0xB308080A),
+                alignment: Alignment.center,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const SizedBox(
+                      width: 26,
+                      height: 26,
+                      child: CircularProgressIndicator(strokeWidth: 2.5, color: kAccent),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(c.busyLabel,
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF9A9AA8))),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar() {
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFF1D1D24))),
+      ),
+      child: Row(
+        children: <Widget>[
+          IconButton(
+            onPressed: () => _pick(ImageSource.gallery),
+            icon: const Icon(Icons.photo_library_outlined, size: 20),
+            color: const Color(0xFFD6D6DE),
+          ),
+          IconButton(
+            onPressed: () => _pick(ImageSource.camera),
+            icon: const Icon(Icons.photo_camera_outlined, size: 20),
+            color: const Color(0xFFD6D6DE),
+          ),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Text(
+                  c.project.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  '${c.project.docW} × ${c.project.docH}',
+                  style: const TextStyle(fontSize: 9.5, color: Color(0xFF71717E)),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: c.canUndo ? c.undo : null,
+            icon: const Icon(Icons.undo, size: 20),
+            color: const Color(0xFFD6D6DE),
+            disabledColor: const Color(0xFF3A3A45),
+          ),
+          IconButton(
+            onPressed: c.canRedo ? c.redo : null,
+            icon: const Icon(Icons.redo, size: 20),
+            color: const Color(0xFFD6D6DE),
+            disabledColor: const Color(0xFF3A3A45),
+          ),
+          GestureDetector(
+            onLongPressStart: (_) {
+              c.compare = true;
+              setState(() {});
+            },
+            onLongPressEnd: (_) {
+              c.compare = false;
+              setState(() {});
+            },
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6),
+              child: Icon(Icons.compare_outlined, size: 20, color: Color(0xFFD6D6DE)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: PillButton(label: 'Export', primary: true, onTap: _openExport),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewport() {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final ui.Size size = ui.Size(constraints.maxWidth, constraints.maxHeight);
+        if (c.viewport != size) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            c.viewport = size;
+            c.refresh(force: true);
+          });
+        }
+        return GestureDetector(
+          onScaleStart: _onScaleStart,
+          onScaleUpdate: _onScaleUpdate,
+          onScaleEnd: _onScaleEnd,
+          onDoubleTap: () {
+            c.resetView();
+            c.refresh();
+          },
+          child: Container(
+            color: const Color(0xFF08080A),
+            child: SizedBox.expand(
+              child: CustomPaint(painter: _CanvasPainter(c)),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _onScaleStart(ScaleStartDetails details) {
+    if (c.pickingColor) {
+      c.sampleAt(c.screenToDoc(details.localFocalPoint)).then((ui.Color? picked) {
+        if (picked != null) {
+          c.applyPickedColor(picked);
+          _toast('Picked #${picked.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}');
+        } else {
+          c.cancelPicker();
+        }
+      });
+      return;
+    }
+    _startZoom = c.zoom;
+    _startPan = Offset(c.panX, c.panY);
+    _startFocal = details.localFocalPoint;
+
+    if (c.tool == 'retouch') {
+      c.beginStroke(c.screenToDoc(details.localFocalPoint));
+      return;
+    }
+    final Layer? hit = _hitLayer(details.localFocalPoint);
+    if (hit != null) {
+      c.selectLayer(hit.id);
+      c.pushHistory();
+      _dragLayer = hit;
+      _dragLayerStart = c.screenToDoc(details.localFocalPoint);
+    }
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (details.pointerCount >= 2) {
+      c.zoom = clampDouble(_startZoom * details.scale, 0.6, 10);
+      c.panX = _startPan.dx + (details.localFocalPoint.dx - _startFocal.dx);
+      c.panY = _startPan.dy + (details.localFocalPoint.dy - _startFocal.dy);
+      c.refresh();
+      return;
+    }
+    if (c.tool == 'retouch') {
+      c.extendStroke(c.screenToDoc(details.localFocalPoint));
+      return;
+    }
+    if (_dragLayer != null && _dragLayerStart != null) {
+      final DocPoint now = c.screenToDoc(details.localFocalPoint);
+      _dragLayer!.x = clampDouble(
+          _dragLayer!.x + (now.dx - _dragLayerStart!.dx) / c.docW, -0.5, 1.5);
+      _dragLayer!.y = clampDouble(
+          _dragLayer!.y + (now.dy - _dragLayerStart!.dy) / c.docH, -0.5, 1.5);
+      _dragLayerStart = now;
+      c.refresh();
+      return;
+    }
+    c.panX = _startPan.dx + (details.localFocalPoint.dx - _startFocal.dx);
+    c.panY = _startPan.dy + (details.localFocalPoint.dy - _startFocal.dy);
+    c.refresh();
+  }
+
+  void _onScaleEnd(ScaleEndDetails details) {
+    if (c.tool == 'retouch') c.endStroke();
+    _dragLayer = null;
+    _dragLayerStart = null;
+  }
+
+  Layer? _hitLayer(Offset local) {
+    final DocPoint p = c.screenToDoc(local);
+    for (int i = c.project.layers.length - 1; i >= 0; i--) {
+      final Layer l = c.project.layers[i];
+      if (!l.visible || l.locked) continue;
+      final double cx = l.x * c.docW;
+      final double cy = l.y * c.docH;
+      final double a = -l.rotation * math.pi / 180.0;
+      final double dx = p.dx - cx;
+      final double dy = p.dy - cy;
+      final double rx = dx * math.cos(a) - dy * math.sin(a);
+      final double ry = dx * math.sin(a) + dy * math.cos(a);
+      if (rx.abs() <= l.w * c.docW / 2 + 6 && ry.abs() <= l.h * c.docH / 2 + 6) {
+        return l;
+      }
+    }
+    return null;
+  }
+
+  Widget _buildSheet() {
+    Widget body;
+    switch (c.tool) {
+      case 'adjust':
+        body = AdjustSheet(c: c);
+        break;
+      case 'filters':
+        body = FilterSheet(c: c);
+        break;
+      case 'crop':
+        body = CropSheet(c: c);
+        break;
+      case 'retouch':
+        body = RetouchSheet(c: c);
+        break;
+      case 'text':
+        body = TextSheet(c: c);
+        break;
+      case 'sticker':
+        body = StickerSheet(c: c);
+        break;
+      default:
+        body = const SizedBox.shrink();
+    }
+    return Container(
+      height: 300,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: const BoxDecoration(
+        color: kPanel,
+        border: Border(top: BorderSide(color: kBorder)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: body,
+    );
+  }
+
+  Widget _buildRail() {
+    const List<List<String>> tools = <List<String>>[
+      <String>['adjust', 'Adjust'],
+      <String>['filters', 'Filters'],
+      <String>['crop', 'Crop'],
+      <String>['retouch', 'Retouch'],
+      <String>['text', 'Text'],
+      <String>['sticker', 'Stickers'],
+      <String>['layers', 'Layers'],
+    ];
+    return Container(
+      height: 64,
+      decoration: const BoxDecoration(
+        color: kRail,
+        border: Border(top: BorderSide(color: Color(0xFF1D1D24))),
+      ),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        itemCount: tools.length,
+        itemBuilder: (BuildContext context, int i) {
+          final String id = tools[i][0];
+          final bool on = c.tool == id;
+          return GestureDetector(
+            onTap: () {
+              if (id == 'layers') {
+                _openLayers();
+                return;
+              }
+              c.setTool(on ? null : id);
+            },
+            child: Container(
+              width: 62,
+              margin: const EdgeInsets.symmetric(horizontal: 1),
+              decoration: BoxDecoration(
+                color: on ? const Color(0xFF1C1A33) : Colors.transparent,
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(_iconFor(id), size: 20,
+                      color: on ? const Color(0xFFB9AEFF) : kDim),
+                  const SizedBox(height: 3),
+                  Text(tools[i][1],
+                      style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                          color: on ? const Color(0xFFB9AEFF) : kDim)),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  IconData _iconFor(String id) {
+    switch (id) {
+      case 'adjust':
+        return Icons.tune;
+      case 'filters':
+        return Icons.filter_vintage_outlined;
+      case 'crop':
+        return Icons.crop;
+      case 'retouch':
+        return Icons.brush_outlined;
+      case 'text':
+        return Icons.text_fields;
+      case 'sticker':
+        return Icons.emoji_emotions_outlined;
+      default:
+        return Icons.layers_outlined;
+    }
+  }
+
+  /* --------------------------------------------------------------------- */
+
+  void _openLayers() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kPanel,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheet) {
+            final Layer? selected = c.selectedLayer;
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.72,
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const Text('Layers',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Stack from bottom to top. Blend modes and opacity apply per layer.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C)),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ListView(
+                      children: <Widget>[
+                        for (final Layer l in c.project.layers.reversed)
+                          LayerTile(
+                            layer: l,
+                            selected: l.id == c.selectedLayerId,
+                            onTap: () {
+                              c.selectLayer(l.id);
+                              setSheet(() {});
+                            },
+                            onToggleVisible: () {
+                              c.mutateLayer(l, (Layer x) => x.visible = !x.visible);
+                              setSheet(() {});
+                            },
+                            onToggleLock: () {
+                              c.mutateLayer(l, (Layer x) => x.locked = !x.locked);
+                              setSheet(() {});
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (selected != null) ...<Widget>[
+                    SliderRow(
+                      label: 'Opacity',
+                      value: selected.opacity * 100,
+                      min: 0,
+                      max: 100,
+                      defaultValue: 100,
+                      onChanged: (double v) {
+                        c.mutateLayer(selected, (Layer l) => l.opacity = v / 100);
+                        setSheet(() {});
+                      },
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int>(
+                      value: selected.blendIndex,
+                      dropdownColor: kPanel,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFF1C1C24),
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(9),
+                          borderSide: const BorderSide(color: kBorder),
+                        ),
+                      ),
+                      items: <DropdownMenuItem<int>>[
+                        for (int i = 0; i < kBlendModes.length; i++)
+                          DropdownMenuItem<int>(value: i, child: Text(kBlendModes[i].label)),
+                      ],
+                      onChanged: (int? v) {
+                        if (v == null) return;
+                        c.mutateLayer(selected, (Layer l) => l.blendIndex = v);
+                        setSheet(() {});
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: PillButton(
+                            label: '▲ Up',
+                            onTap: () {
+                              c.moveLayerOrder(selected, 1);
+                              setSheet(() {});
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: PillButton(
+                            label: '▼ Down',
+                            onTap: () {
+                              c.moveLayerOrder(selected, -1);
+                              setSheet(() {});
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: PillButton(
+                            label: 'Delete',
+                            danger: true,
+                            onTap: () {
+                              c.removeLayer(selected.id);
+                              setSheet(() {});
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _openExport() {
+    bool png = false;
+    int quality = 92;
+    double longEdge = 0; // 0 = original
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kPanel,
+      isScrollControlled: true,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheet) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: 16 + MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const Text('Export',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Rendered at full quality with every layer and retouch mark baked in.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C)),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: <Widget>[
+                      const Expanded(child: Text('Format', style: TextStyle(fontSize: 12.5))),
+                      PillButton(
+                        label: 'JPEG',
+                        primary: !png,
+                        onTap: () => setSheet(() => png = false),
+                      ),
+                      const SizedBox(width: 8),
+                      PillButton(
+                        label: 'PNG',
+                        primary: png,
+                        onTap: () => setSheet(() => png = true),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: <Widget>[
+                      const Expanded(child: Text('Size', style: TextStyle(fontSize: 12.5))),
+                      PillButton(
+                        label: 'Original',
+                        primary: longEdge == 0,
+                        onTap: () => setSheet(() => longEdge = 0),
+                      ),
+                      const SizedBox(width: 8),
+                      PillButton(
+                        label: '2048 px',
+                        primary: longEdge == 2048,
+                        onTap: () => setSheet(() => longEdge = 2048),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SliderRow(
+                    label: 'Quality',
+                    value: quality.toDouble(),
+                    min: 40,
+                    max: 100,
+                    onChanged: (double v) => setSheet(() => quality = v.round()),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: PillButton(
+                          label: 'Cancel',
+                          onTap: () => Navigator.of(context).pop(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: PillButton(
+                          label: 'Save / Share',
+                          primary: true,
+                          onTap: () async {
+                            Navigator.of(context).pop();
+                            await _runExport(png: png, quality: quality, longEdge: longEdge);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _runExport({
+    required bool png,
+    required int quality,
+    required double longEdge,
+  }) async {
+    final Uint8List? bytes =
+        await c.encodeExport(png: png, quality: quality, longEdge: longEdge);
+    if (bytes == null) {
+      _toast('Export failed');
+      return;
+    }
+    try {
+      final Directory dir = await getTemporaryDirectory();
+      final String ext = png ? 'png' : 'jpg';
+      final File file = File(
+          '${dir.path}/lumen-${DateTime.now().millisecondsSinceEpoch}.$ext');
+      await file.writeAsBytes(bytes);
+      await Share.shareXFiles(
+        <XFile>[XFile(file.path)],
+        text: c.project.name,
+      );
+    } catch (error) {
+      debugPrint('share failed: $error');
+      _toast('Saved, but sharing is unavailable');
+    }
+  }
+}
+
+/// ---------------------------------------------------------------------------
+/// Canvas painter
+/// ---------------------------------------------------------------------------
+
+class _CanvasPainter extends CustomPainter {
+  final EditorController c;
+
+  _CanvasPainter(this.c) : super(repaint: c);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final ui.Image? photo = c.photo;
+    if (photo == null) return;
+
+    final double s = c.viewScale;
+    final Offset origin = c.docToScreen(0, 0);
+    final Rect dst = Rect.fromLTWH(origin.dx, origin.dy, c.docW * s, c.docH * s);
+
+    if (c.compare) {
+      canvas.drawRect(dst, Paint()..color = const Color(0xFF15151B));
+      return;
+    }
+
+    canvas.drawImageRect(
+      photo,
+      Rect.fromLTWH(0, 0, photo.width.toDouble(), photo.height.toDouble()),
+      dst,
+      Paint()..filterQuality = FilterQuality.high,
+    );
+
+    final ui.Picture? retouch = c.retouch;
+    if (retouch != null) {
+      canvas.save();
+      canvas.translate(origin.dx, origin.dy);
+      final double k = (c.docW * s) / photo.width;
+      canvas.scale(k);
+      canvas.drawPicture(retouch);
+      canvas.restore();
+    }
+
+    canvas.save();
+    canvas.translate(origin.dx, origin.dy);
+    drawLayers(canvas, c.project, s);
+    canvas.restore();
+
+    final Layer? selected = c.selectedLayer;
+    if (selected != null) {
+      final double cx = origin.dx + selected.x * c.docW * s;
+      final double cy = origin.dy + selected.y * c.docH * s;
+      canvas.save();
+      canvas.translate(cx, cy);
+      canvas.rotate(selected.rotation * math.pi / 180.0);
+      final Rect box = Rect.fromCenter(
+        center: Offset.zero,
+        width: selected.w * c.docW * s,
+        height: selected.h * c.docH * s,
+      );
+      canvas.drawRect(
+        box,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = kAccent,
+      );
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _CanvasPainter oldDelegate) => true;
+}

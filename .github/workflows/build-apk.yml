@@ -1,0 +1,67 @@
+name: Build test APK
+
+# Push the project to GitHub and this runs on GitHub's runners — no local
+# Android SDK, no Flutter install, no signing setup. You get a downloadable
+# app-debug.apk in roughly 5–8 minutes.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate the Android host project
+        # flutter create writes android/ (and ios/) around the existing lib/.
+        # It also rewrites pubspec.yaml, so the original is restored afterwards.
+        run: |
+          cp pubspec.yaml pubspec.original.yaml
+          flutter create --org com.lumen --project-name lumen --platforms=android .
+          cp pubspec.original.yaml pubspec.yaml
+          rm pubspec.original.yaml
+
+      - name: Install packages
+        run: flutter pub get
+
+      - name: Analyze (report only)
+        run: |
+          set +e
+          flutter analyze > analyze.txt 2>&1
+          echo "exit=$?" >> analyze.txt
+          tail -40 analyze.txt
+          exit 0
+
+      - name: Build debug APK
+        run: flutter build apk --debug --verbose 2>&1 | tail -120
+
+      - name: Upload analyzer report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: analyze-report
+          path: analyze.txt
+          if-no-files-found: ignore
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumen-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
