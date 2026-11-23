@@ -44,6 +44,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
   double _startZoom = 1;
   Offset _startPan = Offset.zero;
+  String? _xformMode;              // move | scale | rotate
+  Layer? _xformBase;
+  Offset _xformStartLocal = Offset.zero;
   DocPoint? _dragLayerStart;
   Layer? _dragLayer;
   Offset _startFocal = Offset.zero;
@@ -77,6 +80,21 @@ class _EditorScreenState extends State<EditorScreen> {
     } catch (error) {
       _toast('Could not open that photo');
       debugPrint('pick failed: $error');
+    }
+  }
+
+  Future<void> _addPhotoLayer() async {
+    try {
+      final XFile? file = await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (file == null) return;
+      final Uint8List bytes = await file.readAsBytes();
+      final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+      final ui.FrameInfo frame = await codec.getNextFrame();
+      c.addImageLayer(frame.image, file.name.replaceAll(RegExp(r'\.[^.]+$'), ''));
+      _toast('Photo added as a layer');
+    } catch (error) {
+      _toast('Could not add that photo');
+      debugPrint('add photo failed: $error');
     }
   }
 
@@ -268,6 +286,22 @@ class _EditorScreenState extends State<EditorScreen> {
       c.beginStroke(c.screenToDoc(details.localFocalPoint));
       return;
     }
+    if (c.tool == 'mask') {
+      c.beginMaskStroke(c.screenToDoc(details.localFocalPoint));
+      return;
+    }
+    final String? handle = _handleAt(details.localFocalPoint);
+    if (handle != null) {
+      final Layer? layer = c.selectedLayer;
+      if (layer != null) {
+        c.pushHistory();
+        _xformMode = handle;
+        _xformBase = layer.copy();
+        _xformStartLocal = details.localFocalPoint;
+      }
+      return;
+    }
+
     final Layer? hit = _hitLayer(details.localFocalPoint);
     if (hit != null) {
       c.selectLayer(hit.id);
@@ -290,6 +324,14 @@ class _EditorScreenState extends State<EditorScreen> {
       c.extendStroke(c.screenToDoc(details.localFocalPoint));
       return;
     }
+    if (c.tool == 'mask') {
+      c.extendMaskStroke(c.screenToDoc(details.localFocalPoint));
+      return;
+    }
+    if (_xformMode != null && _xformBase != null) {
+      _applyXform(details.localFocalPoint);
+      return;
+    }
     if (_dragLayer != null && _dragLayerStart != null) {
       final DocPoint now = c.screenToDoc(details.localFocalPoint);
       _dragLayer!.x = clampDouble(
@@ -306,8 +348,45 @@ class _EditorScreenState extends State<EditorScreen> {
     c.refresh();
   }
 
+  void _applyXform(Offset local) {
+    final Layer? layer = c.selectedLayer;
+    final Layer base = _xformBase!;
+    if (layer == null) return;
+    final DocPoint p = c.screenToDoc(local);
+    final double cx = base.x * c.docW;
+    final double cy = base.y * c.docH;
+
+    if (_xformMode == 'rotate') {
+      final double angle = math.atan2(p.dy - cy, p.dx - cx) * 180 / math.pi + 90;
+      double snapped = angle;
+      final double nearest = (angle / 15).round() * 15.0;
+      if ((angle - nearest).abs() < 4) snapped = nearest;
+      layer.rotation = snapped;
+    } else {
+      final double a = -base.rotation * math.pi / 180.0;
+      final double dx = p.dx - cx;
+      final double dy = p.dy - cy;
+      final double rx = (dx * math.cos(a) - dy * math.sin(a)).abs();
+      final double ry = (dx * math.sin(a) + dy * math.cos(a)).abs();
+      double nw = (rx * 2) / c.docW;
+      double nh = (ry * 2) / c.docH;
+      nw = clampDouble(nw, 0.04, 2.0);
+      nh = clampDouble(nh, 0.02, 2.0);
+      final double factor = nh / math.max(0.001, base.h);
+      layer.w = nw;
+      layer.h = nh;
+      if (layer.type == LayerType.text || layer.type == LayerType.sticker) {
+        layer.size = clampDouble(base.size * factor, 0.005, 0.6);
+      }
+    }
+    c.refresh();
+  }
+
   void _onScaleEnd(ScaleEndDetails details) {
+    _xformMode = null;
+    _xformBase = null;
     if (c.tool == 'retouch') c.endStroke();
+    if (c.tool == 'mask') c.endMaskStroke();
     _dragLayer = null;
     _dragLayerStart = null;
   }
@@ -326,6 +405,35 @@ class _EditorScreenState extends State<EditorScreen> {
         : math.max(slack, (h - c.viewport.height) / 2 + slack);
     c.panX = clampDouble(c.panX, -maxX, maxX);
     c.panY = clampDouble(c.panY, -maxY, maxY);
+  }
+
+  /// Corner and rotate handles for the selected layer, in screen space.
+  String? _handleAt(Offset local) {
+    final Layer? layer = c.selectedLayer;
+    if (layer == null) return null;
+    final double s = c.viewScale;
+    final Offset origin = c.docToScreen(0, 0);
+    final double cx = origin.dx + layer.x * c.docW * s;
+    final double cy = origin.dy + layer.y * c.docH * s;
+    final double hw = layer.w * c.docW * s / 2;
+    final double hh = layer.h * c.docH * s / 2;
+    final double a = -layer.rotation * math.pi / 180.0;
+    final double dx = local.dx - cx;
+    final double dy = local.dy - cy;
+    final double rx = dx * math.cos(a) - dy * math.sin(a);
+    final double ry = dx * math.sin(a) + dy * math.cos(a);
+
+    if ((rx.abs() < 26) && ((ry - (-hh - 30)).abs() < 26)) return 'rotate';
+    const List<String> names = <String>['scale0', 'scale1', 'scale2', 'scale3'];
+    final List<List<double>> corners = <List<double>>[
+      <double>[-hw, -hh], <double>[hw, -hh], <double>[hw, hh], <double>[-hw, hh]
+    ];
+    for (int i = 0; i < 4; i++) {
+      if ((rx - corners[i][0]).abs() < 28 && (ry - corners[i][1]).abs() < 28) {
+        return names[i];
+      }
+    }
+    return null;
   }
 
   Layer? _hitLayer(Offset local) {
@@ -362,11 +470,14 @@ class _EditorScreenState extends State<EditorScreen> {
       case 'retouch':
         body = RetouchSheet(c: c);
         break;
+      case 'mask':
+        body = MaskSheet(c: c);
+        break;
       case 'text':
         body = TextSheet(c: c);
         break;
       case 'sticker':
-        body = StickerSheet(c: c);
+        body = StickerSheet(c: c, onAddPhoto: _addPhotoLayer);
         break;
       default:
         body = const SizedBox.shrink();
@@ -391,6 +502,7 @@ class _EditorScreenState extends State<EditorScreen> {
       <String>['filters', 'Filters'],
       <String>['crop', 'Crop'],
       <String>['retouch', 'Retouch'],
+      <String>['mask', 'Mask'],
       <String>['text', 'Text'],
       <String>['sticker', 'Stickers'],
       <String>['layers', 'Layers'],
@@ -453,6 +565,8 @@ class _EditorScreenState extends State<EditorScreen> {
         return Icons.crop;
       case 'retouch':
         return Icons.brush_outlined;
+      case 'mask':
+        return Icons.contrast;
       case 'text':
         return Icons.text_fields;
       case 'sticker':
@@ -786,6 +900,39 @@ class _CanvasPainter extends CustomPainter {
           ..strokeWidth = 1.5
           ..color = kAccent,
       );
+      // rotate handle
+      final Offset rotHandle = Offset(0, -box.height / 2 - 30);
+      canvas.drawLine(
+        Offset(0, -box.height / 2),
+        rotHandle,
+        Paint()
+          ..strokeWidth = 1.5
+          ..color = kAccent,
+      );
+      canvas.drawCircle(rotHandle, 8, Paint()..color = kText);
+      canvas.drawCircle(
+        rotHandle,
+        8,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = kAccent,
+      );
+      // corner handles
+      final List<Offset> corners = <Offset>[
+        box.topLeft, box.topRight, box.bottomRight, box.bottomLeft
+      ];
+      for (final Offset corner in corners) {
+        final Rect handle = Rect.fromCenter(center: corner, width: 16, height: 16);
+        canvas.drawRect(handle, Paint()..color = kText);
+        canvas.drawRect(
+          handle,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..color = kAccent,
+        );
+      }
       canvas.restore();
     }
   }

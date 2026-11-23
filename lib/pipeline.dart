@@ -312,12 +312,12 @@ Future<ui.Image> buildPhoto(Project project, double scale) async {
     }
   }
 
-  /* local mask: show the adjusted version only where painted */
-  if (project.mask != null) {
+  /* local mask: adjustments apply only where the mask is painted */
+  if (project.mask != null && project.maskEnabled) {
     final ui.PictureRecorder rec = ui.PictureRecorder();
     final ui.Canvas c = ui.Canvas(rec);
     c.drawImage(base, ui.Offset.zero, _imagePaint());
-    c.saveLayer(ui.Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()), ui.Paint());
+    c.saveLayer(null, ui.Paint());
     c.drawImage(photo, ui.Offset.zero, _imagePaint());
     c.drawImageRect(
       project.mask!,
@@ -475,6 +475,9 @@ void drawLayers(ui.Canvas canvas, Project project, double scale) {
       case LayerType.shape:
         _drawShape(canvas, layer, rect);
         break;
+      case LayerType.image:
+        _drawImageLayer(canvas, layer, rect);
+        break;
     }
     if (needsLayer) canvas.restore();
     canvas.restore();
@@ -555,6 +558,17 @@ FontWeight _weight(int w) {
     default:
       return FontWeight.w700;
   }
+}
+
+void _drawImageLayer(ui.Canvas canvas, Layer layer, ui.Rect rect) {
+  final ui.Image? img = layer.pixels;
+  if (img == null) return;
+  canvas.drawImageRect(
+    img,
+    ui.Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+    rect,
+    ui.Paint()..filterQuality = ui.FilterQuality.high,
+  );
 }
 
 void _drawSticker(ui.Canvas canvas, Layer layer, double docHeight) {

@@ -385,6 +385,198 @@ class EditorController extends ChangeNotifier {
   }
 
   /* --------------------------------------------------------------------- */
+  /* mask — adjustments apply only where painted                            */
+  /* --------------------------------------------------------------------- */
+
+  double maskSize = 90;
+  final List<DocPoint> _maskStroke = <DocPoint>[];
+  bool _masking = false;
+
+  void beginMaskStroke(DocPoint point) {
+    _masking = true;
+    _maskStroke
+      ..clear()
+      ..add(point);
+  }
+
+  void extendMaskStroke(DocPoint point) {
+    if (!_masking) return;
+    final DocPoint last = _maskStroke.last;
+    final double dx = point.dx - last.dx;
+    final double dy = point.dy - last.dy;
+    if (dx * dx + dy * dy < 1) return;
+    _maskStroke.add(point);
+  }
+
+  Future<void> endMaskStroke() async {
+    if (!_masking) return;
+    _masking = false;
+    if (_maskStroke.isEmpty) return;
+    final ui.Image? base = _photo;
+    if (base == null) return;
+
+    pushHistory();
+    final double ps = photoScale;
+    final int w = base.width;
+    final int h = base.height;
+    final double r = (maskSize / 2) / viewScale * ps;
+
+    final ui.PictureRecorder rec = ui.PictureRecorder();
+    final ui.Canvas canvas = ui.Canvas(rec);
+    if (project.mask != null) {
+      canvas.drawImage(project.mask!, ui.Offset.zero, ui.Paint());
+    }
+    for (final DocPoint pt in _maskStroke) {
+      final ui.Offset centre = ui.Offset(pt.dx * ps, pt.dy * ps);
+      final ui.Paint paint = ui.Paint()
+        ..blendMode = maskErase ? ui.BlendMode.dstOut : ui.BlendMode.srcOver
+        ..shader = ui.Gradient.radial(
+          centre,
+          r,
+          <ui.Color>[
+            const ui.Color(0xFFFFFFFF),
+            const ui.Color(0xFFFFFFFF),
+            const ui.Color(0x00FFFFFF),
+          ],
+          <double>[0.0, 0.72, 1.0],
+        );
+      canvas.drawCircle(centre, r, paint);
+    }
+    final ui.Image next = await rec.endRecording().toImage(w, h);
+    project.mask?.dispose();
+    project.mask = next;
+    project.maskEnabled = true;
+    _maskStroke.clear();
+    _touch();
+  }
+
+  void clearMask() {
+    if (project.mask == null) return;
+    pushHistory();
+    project.mask = null;
+    project.maskEnabled = false;
+    _touch();
+  }
+
+  void toggleMask() {
+    if (project.mask == null) return;
+    project.maskEnabled = !project.maskEnabled;
+    _touch();
+  }
+
+  Future<void> invertMask() async {
+    final ui.Image? current = project.mask;
+    if (current == null) return;
+    pushHistory();
+    final ui.PictureRecorder rec = ui.PictureRecorder();
+    final ui.Canvas canvas = ui.Canvas(rec);
+    canvas.drawRect(
+      ui.Rect.fromLTWH(0, 0, current.width.toDouble(), current.height.toDouble()),
+      ui.Paint()..color = const ui.Color(0xFFFFFFFF),
+    );
+    canvas.drawImage(current, ui.Offset.zero, ui.Paint()..blendMode = ui.BlendMode.dstOut);
+    final ui.Image inverted = await rec.endRecording().toImage(current.width, current.height);
+    project.mask = inverted;
+    project.maskEnabled = true;
+    _touch();
+  }
+
+  /* --------------------------------------------------------------------- */
+  /* extra photo layers                                                     */
+  /* --------------------------------------------------------------------- */
+
+  void addImageLayer(ui.Image image, String name) {
+    pushHistory();
+    final double docAspect = docW / docH;
+    final double imgAspect = image.width / image.height;
+    double w = 0.62;
+    double h = w * docAspect / imgAspect;
+    if (h > 0.9) {
+      h = 0.9;
+      w = h * imgAspect / docAspect;
+    }
+    final Layer layer = Layer(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      type: LayerType.image,
+      text: name,
+      pixels: image,
+      x: 0.5,
+      y: 0.5,
+      w: w,
+      h: h,
+    );
+    project.layers.add(layer);
+    selectedLayerId = layer.id;
+    _touch();
+  }
+
+  /* --------------------------------------------------------------------- */
+  /* auto tone                                                              */
+  /* --------------------------------------------------------------------- */
+
+  Future<String> autoAdjust(String mode) async {
+    final ui.Image? img = _photo;
+    if (img == null) return 'nothing to analyse';
+    final ui.PictureRecorder rec = ui.PictureRecorder();
+    final ui.Canvas canvas = ui.Canvas(rec);
+    canvas.drawImageRect(
+      img,
+      ui.Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      ui.Rect.fromLTWH(0, 0, 72, 72),
+      ui.Paint()..filterQuality = ui.FilterQuality.medium,
+    );
+    final ui.Image small = await rec.endRecording().toImage(72, 72);
+    final Uint8List data = await pixelsOf(small);
+    small.dispose();
+
+    double sum = 0, sumSq = 0, rs = 0, gs = 0, bs = 0;
+    int n = 0;
+    for (int i = 0; i < data.length; i += 4) {
+      final double l = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      sum += l;
+      sumSq += l * l;
+      rs += data[i];
+      gs += data[i + 1];
+      bs += data[i + 2];
+      n++;
+    }
+    if (n == 0) return 'nothing to analyse';
+    final double mean = sum / n;
+    final double sd = math.sqrt(math.max(0, sumSq / n - mean * mean));
+    final double rMean = rs / n, gMean = gs / n, bMean = bs / n;
+
+    pushHistory();
+    final Map<String, double> next = Map<String, double>.of(project.adjust.v);
+    String label;
+    switch (mode) {
+      case 'brightness':
+        next['brightness'] = clampDouble((128 - mean) * 0.55, -45, 45);
+        next['exposure'] = 0;
+        label = 'Auto brightness';
+        break;
+      case 'contrast':
+        next['contrast'] = clampDouble((52 - sd) * 1.05, -25, 40);
+        label = 'Auto contrast';
+        break;
+      default:
+        next['exposure'] = clampDouble((128 - mean) * 0.42, -28, 28);
+        next['contrast'] = clampDouble((48 - sd) * 0.85, -12, 26);
+        next['shadows'] = mean < 90 ? 22 : 8;
+        next['highlights'] = mean > 175 ? -20 : -6;
+        next['temperature'] = clampDouble((bMean - rMean) * 0.30, -22, 22);
+        next['vibrance'] = 14;
+        next['saturation'] = 4;
+        next['clarity'] = 8;
+        next['sharpen'] = 12;
+        label = 'Auto enhance';
+        break;
+    }
+    project.adjust = Adjustments(next);
+    _touch();
+    return label;
+  }
+
+  /* --------------------------------------------------------------------- */
   /* retouch                                                                */
   /* --------------------------------------------------------------------- */
 

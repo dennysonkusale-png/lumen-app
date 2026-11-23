@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -58,6 +59,32 @@ class AdjustSheet extends StatelessWidget {
             c.resetAdjustments();
           },
         ),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: PillButton(
+                label: 'Auto enhance',
+                primary: true,
+                onTap: () => c.autoAdjust('enhance'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: PillButton(
+                label: 'Auto contrast',
+                onTap: () => c.autoAdjust('contrast'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: PillButton(
+                label: 'Auto bright',
+                onTap: () => c.autoAdjust('brightness'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.only(top: 4, bottom: 12),
@@ -419,7 +446,9 @@ class _TextSheetState extends State<TextSheet> {
   @override
   Widget build(BuildContext context) {
     final EditorController c = widget.c;
-    final Layer? layer = c.selectedLayer;
+    final Layer? selected = c.selectedLayer;
+    final Layer? layer =
+        (selected != null && selected.type == LayerType.text) ? selected : null;
     if (layer == null) {
       return Center(
         child: PillButton(
@@ -518,7 +547,8 @@ class _TextSheetState extends State<TextSheet> {
 
 class StickerSheet extends StatelessWidget {
   final EditorController c;
-  const StickerSheet({super.key, required this.c});
+  final Future<void> Function()? onAddPhoto;
+  const StickerSheet({super.key, required this.c, this.onAddPhoto});
 
   static const List<String> _shapes = <String>[
     'rect', 'ellipse', 'triangle', 'star', 'heart', 'arrow', 'line'
@@ -567,6 +597,36 @@ class StickerSheet extends StatelessWidget {
             ),
           ),
         ),
+        if (c.selectedLayer != null) ...<Widget>[
+          const SectionLabel('Selected layer'),
+          SliderRow(
+            label: 'Size',
+            value: c.selectedLayer!.w * 100,
+            min: 4,
+            max: 150,
+            defaultValue: 34,
+            onChanged: (double v) {
+              final Layer l = c.selectedLayer!;
+              final double ratio = l.h / math.max(0.001, l.w);
+              final double factor = (v / 100) / math.max(0.001, l.w);
+              c.mutateLayer(l, (Layer x) {
+                x.w = v / 100;
+                x.h = (v / 100) * ratio;
+                if (x.type == LayerType.text || x.type == LayerType.sticker) {
+                  x.size = clampDouble(x.size * factor, 0.005, 0.6);
+                }
+              });
+            },
+          ),
+          SliderRow(
+            label: 'Rotate',
+            value: c.selectedLayer!.rotation,
+            min: -180,
+            max: 180,
+            defaultValue: 0,
+            onChanged: (double v) => c.mutateLayer(c.selectedLayer!, (Layer l) => l.rotation = v),
+          ),
+        ],
         if (c.selectedLayer != null && c.selectedLayer!.type == LayerType.shape) ...<Widget>[
           const SectionLabel('Shape colour'),
           SizedBox(
@@ -600,6 +660,17 @@ class StickerSheet extends StatelessWidget {
           ),
           _pickerHint(c),
         ],
+        const SizedBox(height: 6),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: PillButton(
+                label: '+ Add photo as layer',
+                onTap: () => onAddPhoto?.call(),
+              ),
+            ),
+          ],
+        ),
         const SectionLabel('Stickers'),
         Expanded(
           child: GridView.builder(
@@ -629,6 +700,74 @@ class StickerSheet extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+
+/// ---------------------------------------------------------------------------
+/// Local mask
+/// ---------------------------------------------------------------------------
+
+class MaskSheet extends StatelessWidget {
+  final EditorController c;
+  const MaskSheet({super.key, required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasMask = c.project.mask != null;
+    return ListView(
+      children: <Widget>[
+        SheetHeader(
+          title: 'Mask',
+          onClose: () => c.setTool(null),
+          onReset: () => c.clearMask(),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 4, bottom: 8),
+          child: Text(
+            'Paint on the photo. Adjustments then apply only where you painted — '
+            'everything outside the mask keeps the original look.',
+            style: TextStyle(fontSize: 11.5, color: Color(0xFF8A8A94), height: 1.5),
+          ),
+        ),
+        ChipRow(
+          labels: const <String>['Paint', 'Erase'],
+          selected: c.maskErase ? 1 : 0,
+          onSelected: (int i) {
+            c.maskErase = i == 1;
+            c.refresh();
+          },
+        ),
+        SliderRow(
+          label: 'Brush size',
+          value: c.maskSize,
+          min: 20,
+          max: 240,
+          defaultValue: 90,
+          onChanged: (double v) => c.maskSize = v,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: PillButton(
+                label: hasMask ? (c.project.maskEnabled ? 'Mask on' : 'Mask off') : 'No mask',
+                primary: hasMask && c.project.maskEnabled,
+                onTap: c.toggleMask,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: PillButton(label: 'Invert', onTap: () => c.invertMask()),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: PillButton(label: 'Clear', danger: true, onTap: c.clearMask),
+            ),
+          ],
         ),
       ],
     );

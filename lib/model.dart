@@ -225,7 +225,7 @@ ui.BlendMode blendByIndex(int i) =>
 /// Document
 /// ---------------------------------------------------------------------------
 
-enum LayerType { text, shape, sticker }
+enum LayerType { text, shape, sticker, image }
 
 class Layer {
   String id;
@@ -241,6 +241,7 @@ class Layer {
   bool shadow;
   String shape;         // rect | ellipse | triangle | star | heart | arrow | line
   String emoji;
+  ui.Image? pixels;     // only for LayerType.image
   double x, y, w, h;    // normalised to the document, x/y = centre
   double rotation;
   double opacity;
@@ -262,6 +263,7 @@ class Layer {
     this.shadow = true,
     this.shape = 'rect',
     this.emoji = '✨',
+    this.pixels,
     this.x = 0.5,
     this.y = 0.5,
     this.w = 0.6,
@@ -287,6 +289,7 @@ class Layer {
         shadow: shadow,
         shape: shape,
         emoji: emoji,
+        pixels: pixels,
         x: x,
         y: y,
         w: w,
@@ -306,6 +309,8 @@ class Layer {
         return 'Sticker $emoji';
       case LayerType.shape:
         return 'Shape · $shape';
+      case LayerType.image:
+        return text.isEmpty ? 'Photo' : text;
     }
   }
 }
@@ -379,6 +384,7 @@ class Project {
   List<Layer> layers;
   ui.Image? mask;
   ui.Image? cutout;
+  bool maskEnabled;
   double backgroundBlur;
   String name;
 
@@ -394,6 +400,7 @@ class Project {
     List<Layer>? layers,
     this.mask,
     this.cutout,
+    this.maskEnabled = true,
     this.backgroundBlur = 0,
     this.name = 'Untitled',
   })  : crop = crop ?? CropRect(x: 0, y: 0, w: 1, h: 1),
@@ -416,6 +423,7 @@ class Project {
         layers: layers.map((Layer l) => l.copy()).toList(),
         mask: mask,
         cutout: cutout,
+        maskEnabled: maskEnabled,
         backgroundBlur: backgroundBlur,
         name: name,
       );
