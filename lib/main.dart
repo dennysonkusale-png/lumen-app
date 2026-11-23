@@ -64,7 +64,6 @@ class _EditorScreenState extends State<EditorScreen> {
   void initState() {
     super.initState();
     c.addListener(_onChange);
-    WidgetsBinding.instance.addPostFrameCallback((_) => c.loadDemo());
   }
 
   @override
@@ -123,6 +122,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (c.project.source == null) {
+      return Scaffold(backgroundColor: kBg, body: SafeArea(child: _buildHome()));
+    }
     return Scaffold(
       backgroundColor: kBg,
       body: SafeArea(
@@ -157,6 +159,235 @@ class _EditorScreenState extends State<EditorScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHome() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const Spacer(flex: 3),
+          Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <Color>[Color(0xFF8B7BFF), Color(0xFF5B49D6)],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: <BoxShadow>[
+                BoxShadow(
+                  color: kAccent.withOpacity(0.45),
+                  blurRadius: 26,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: const Icon(Icons.tonality, size: 28, color: Colors.white),
+          ),
+          const SizedBox(height: 22),
+          const Text(
+            'Lumen',
+            style: TextStyle(
+              fontSize: 34,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.6,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'A quiet place to edit photos. Everything happens on your phone.',
+            style: TextStyle(fontSize: 13, color: Color(0xFF8A8A94), height: 1.55),
+          ),
+          const Spacer(flex: 2),
+          _homeButton(
+            label: 'New file',
+            icon: Icons.add,
+            primary: true,
+            onTap: _openNewFileSheet,
+          ),
+          const SizedBox(height: 12),
+          _homeButton(
+            label: 'Open file',
+            icon: Icons.photo_library_outlined,
+            primary: false,
+            onTap: () => _pick(ImageSource.gallery),
+          ),
+          const SizedBox(height: 10),
+          _homeButton(
+            label: 'Take a photo',
+            icon: Icons.photo_camera_outlined,
+            primary: false,
+            onTap: () => _pick(ImageSource.camera),
+          ),
+          const Spacer(flex: 3),
+          const Text(
+            'JPEG · PNG · WebP · HEIC',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 10, color: Color(0xFF4E4E5C), letterSpacing: 0.6),
+          ),
+          const SizedBox(height: 14),
+        ],
+      ),
+    );
+  }
+
+  Widget _homeButton({
+    required String label,
+    required IconData icon,
+    required bool primary,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 54,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: primary ? kAccent : const Color(0xFF1A1A21),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: primary ? kAccent : const Color(0xFF2C2C38),
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(icon, size: 19, color: primary ? Colors.white : const Color(0xFFD6D6DE)),
+            const SizedBox(width: 9),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: primary ? Colors.white : const Color(0xFFEDEDF3),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openNewFileSheet() {
+    const List<List<Object>> sizes = <List<Object>>[
+      <Object>['Square', 1080, 1080],
+      <Object>['Portrait', 1080, 1350],
+      <Object>['Story', 1080, 1920],
+      <Object>['Landscape', 1920, 1080],
+      <Object>['Wide', 2048, 1152],
+    ];
+    int selected = 0;
+    bool white = true;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kPanel,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheet) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const Text('New file',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Start with a blank canvas, then add photos, text and shapes.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C)),
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: <Widget>[
+                      for (int i = 0; i < sizes.length; i++)
+                        GestureDetector(
+                          onTap: () => setSheet(() => selected = i),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: selected == i
+                                  ? const Color(0xFF26224A)
+                                  : const Color(0xFF20202A),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: selected == i
+                                    ? const Color(0xFF4B3FBF)
+                                    : Colors.transparent,
+                              ),
+                            ),
+                            child: Column(
+                              children: <Widget>[
+                                Text(
+                                  sizes[i][0] as String,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: selected == i
+                                        ? const Color(0xFFB9AEFF)
+                                        : const Color(0xFFD6D6DE),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${sizes[i][1]} × ${sizes[i][2]}',
+                                  style: const TextStyle(
+                                      fontSize: 9.5, color: Color(0xFF71717E)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: <Widget>[
+                      const Expanded(
+                        child: Text('Background', style: TextStyle(fontSize: 12.5)),
+                      ),
+                      PillButton(
+                        label: 'White',
+                        primary: white,
+                        onTap: () => setSheet(() => white = true),
+                      ),
+                      const SizedBox(width: 8),
+                      PillButton(
+                        label: 'Transparent',
+                        primary: !white,
+                        onTap: () => setSheet(() => white = false),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  PillButton(
+                    label: 'Create',
+                    primary: true,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      c.newDocument(
+                        sizes[selected][1] as int,
+                        sizes[selected][2] as int,
+                        white: white,
+                      );
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

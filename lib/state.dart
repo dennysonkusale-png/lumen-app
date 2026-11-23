@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart' show rootBundle;
 import 'package:image/image.dart' as img;
 
 import 'model.dart';
@@ -223,9 +222,38 @@ class EditorController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadDemo() async {
-    final ByteData data = await rootBundle.load('assets/demo.jpg');
-    await loadBytes(data.buffer.asUint8List(), 'Sunset Seascape');
+  /// A blank canvas to build on — no photo, ready for layers and text.
+  Future<void> newDocument(int width, int height, {bool white = true}) async {
+    busy = true;
+    busyLabel = 'Creating canvas…';
+    notifyListeners();
+    final ui.PictureRecorder rec = ui.PictureRecorder();
+    final ui.Canvas canvas = ui.Canvas(rec);
+    if (white) {
+      canvas.drawRect(
+        ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+        ui.Paint()..color = const ui.Color(0xFFFFFFFF),
+      );
+    }
+    final ui.Image image = await rec.endRecording().toImage(width, height);
+    project.source?.dispose();
+    project = Project(
+      source: image,
+      sourceW: width,
+      sourceH: height,
+      crop: CropRect(x: 0, y: 0, w: width.toDouble(), h: height.toDouble()),
+      name: 'Untitled',
+    );
+    _past.clear();
+    _future.clear();
+    selectedLayerId = null;
+    tool = null;
+    resetView();
+    _revision++;
+    _photoKey = '';
+    await refresh(force: true);
+    busy = false;
+    notifyListeners();
   }
 
   void setAdjust(String key, double value) {
