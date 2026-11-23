@@ -452,12 +452,19 @@ void drawLayers(ui.Canvas canvas, Project project, double scale) {
     canvas.save();
     canvas.translate(layer.x * w, layer.y * h);
     canvas.rotate(layer.rotation * math.pi / 180.0);
-    final ui.Paint layerPaint = ui.Paint()
-      ..blendMode = blendByIndex(layer.blendIndex)
-      ..color = ui.Color.fromARGB((clampDouble(layer.opacity, 0, 1) * 255).round(), 255, 255, 255);
     final ui.Rect rect =
         ui.Rect.fromCenter(center: ui.Offset.zero, width: layer.w * w, height: layer.h * h);
-    canvas.saveLayer(rect, layerPaint);
+    // Only pay for an offscreen layer when opacity or blending needs one, and
+    // pass null bounds: a bounded saveLayer clips shapes, stickers and text
+    // descenders that reach past the layer box.
+    final bool needsLayer = layer.opacity < 0.999 || layer.blendIndex != 0;
+    if (needsLayer) {
+      final ui.Paint layerPaint = ui.Paint()
+        ..blendMode = blendByIndex(layer.blendIndex)
+        ..color = ui.Color.fromARGB(
+            (clampDouble(layer.opacity, 0, 1) * 255).round(), 255, 255, 255);
+      canvas.saveLayer(null, layerPaint);
+    }
     switch (layer.type) {
       case LayerType.text:
         _drawText(canvas, layer, h);
@@ -469,7 +476,7 @@ void drawLayers(ui.Canvas canvas, Project project, double scale) {
         _drawShape(canvas, layer, rect);
         break;
     }
-    canvas.restore();
+    if (needsLayer) canvas.restore();
     canvas.restore();
   }
 }

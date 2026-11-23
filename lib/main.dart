@@ -134,24 +134,31 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Widget _buildTopBar() {
+    Widget icon(IconData data, VoidCallback? onTap, {Color? color}) {
+      return SizedBox(
+        width: 36,
+        height: 36,
+        child: IconButton(
+          onPressed: onTap,
+          icon: Icon(data, size: 19),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+          color: color ?? const Color(0xFFD6D6DE),
+          disabledColor: const Color(0xFF3A3A45),
+        ),
+      );
+    }
+
     return Container(
-      height: 52,
+      height: 50,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Color(0xFF1D1D24))),
       ),
       child: Row(
         children: <Widget>[
-          IconButton(
-            onPressed: () => _pick(ImageSource.gallery),
-            icon: const Icon(Icons.photo_library_outlined, size: 20),
-            color: const Color(0xFFD6D6DE),
-          ),
-          IconButton(
-            onPressed: () => _pick(ImageSource.camera),
-            icon: const Icon(Icons.photo_camera_outlined, size: 20),
-            color: const Color(0xFFD6D6DE),
-          ),
+          icon(Icons.photo_library_outlined, () => _pick(ImageSource.gallery)),
+          icon(Icons.photo_camera_outlined, () => _pick(ImageSource.camera)),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -160,27 +167,18 @@ class _EditorScreenState extends State<EditorScreen> {
                   c.project.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 Text(
                   '${c.project.docW} × ${c.project.docH}',
-                  style: const TextStyle(fontSize: 9.5, color: Color(0xFF71717E)),
+                  style: const TextStyle(fontSize: 9, color: Color(0xFF71717E)),
                 ),
               ],
             ),
           ),
-          IconButton(
-            onPressed: c.canUndo ? c.undo : null,
-            icon: const Icon(Icons.undo, size: 20),
-            color: const Color(0xFFD6D6DE),
-            disabledColor: const Color(0xFF3A3A45),
-          ),
-          IconButton(
-            onPressed: c.canRedo ? c.redo : null,
-            icon: const Icon(Icons.redo, size: 20),
-            color: const Color(0xFFD6D6DE),
-            disabledColor: const Color(0xFF3A3A45),
-          ),
+          icon(Icons.undo, c.canUndo ? c.undo : null),
+          icon(Icons.redo, c.canRedo ? c.redo : null),
           GestureDetector(
             onLongPressStart: (_) {
               c.compare = true;
@@ -190,14 +188,29 @@ class _EditorScreenState extends State<EditorScreen> {
               c.compare = false;
               setState(() {});
             },
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 6),
-              child: Icon(Icons.compare_outlined, size: 20, color: Color(0xFFD6D6DE)),
+            child: const SizedBox(
+              width: 32,
+              height: 36,
+              child: Icon(Icons.compare_outlined, size: 19, color: Color(0xFFD6D6DE)),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: PillButton(label: 'Export', primary: true, onTap: _openExport),
+            padding: const EdgeInsets.only(left: 4),
+            child: GestureDetector(
+              onTap: _openExport,
+              child: Container(
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 13),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: kAccent,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text('Export',
+                    style: TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.white)),
+              ),
+            ),
           ),
         ],
       ),
@@ -212,6 +225,7 @@ class _EditorScreenState extends State<EditorScreen> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             c.viewport = size;
+            _clampPan();
             c.refresh(force: true);
           });
         }
@@ -268,6 +282,7 @@ class _EditorScreenState extends State<EditorScreen> {
       c.zoom = clampDouble(_startZoom * details.scale, 0.6, 10);
       c.panX = _startPan.dx + (details.localFocalPoint.dx - _startFocal.dx);
       c.panY = _startPan.dy + (details.localFocalPoint.dy - _startFocal.dy);
+      _clampPan();
       c.refresh();
       return;
     }
@@ -287,6 +302,7 @@ class _EditorScreenState extends State<EditorScreen> {
     }
     c.panX = _startPan.dx + (details.localFocalPoint.dx - _startFocal.dx);
     c.panY = _startPan.dy + (details.localFocalPoint.dy - _startFocal.dy);
+    _clampPan();
     c.refresh();
   }
 
@@ -294,6 +310,22 @@ class _EditorScreenState extends State<EditorScreen> {
     if (c.tool == 'retouch') c.endStroke();
     _dragLayer = null;
     _dragLayerStart = null;
+  }
+
+  /// Keeps the photo from being dragged off the viewport.
+  void _clampPan() {
+    final double s = c.viewScale;
+    final double w = c.docW * s;
+    final double h = c.docH * s;
+    const double slack = 28;
+    final double maxX = w <= c.viewport.width
+        ? slack
+        : math.max(slack, (w - c.viewport.width) / 2 + slack);
+    final double maxY = h <= c.viewport.height
+        ? slack
+        : math.max(slack, (h - c.viewport.height) / 2 + slack);
+    c.panX = clampDouble(c.panX, -maxX, maxX);
+    c.panY = clampDouble(c.panY, -maxY, maxY);
   }
 
   Layer? _hitLayer(Offset local) {
@@ -339,8 +371,10 @@ class _EditorScreenState extends State<EditorScreen> {
       default:
         body = const SizedBox.shrink();
     }
+    final double sheetHeight =
+        math.min(430, math.max(300, MediaQuery.of(context).size.height * 0.46));
     return Container(
-      height: 300,
+      height: sheetHeight,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: const BoxDecoration(
         color: kPanel,
