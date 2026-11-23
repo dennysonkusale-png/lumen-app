@@ -54,6 +54,21 @@ jobs:
             grep -nE "compileSdk|minSdk" "$f" || true
           done
 
+      - name: Disable release lint
+        # image_picker_android trips a known Android lint crash
+        # ('List.removeLast()' in CommentDetector) on lintVitalRelease.
+        run: |
+          set -e
+          for f in android/app/build.gradle android/app/build.gradle.kts; do
+            [ -f "$f" ] || continue
+            if [ "${f##*.}" = "kts" ]; then
+              sed -i '0,/^android {/s//android {\n    lint {\n        checkReleaseBuilds = false\n        abortOnError = false\n    }/' "$f"
+            else
+              sed -i '0,/^android {/s//android {\n    lint {\n        checkReleaseBuilds false\n        abortOnError false\n    }/' "$f"
+            fi
+            echo "--- $f"; sed -n '/^android {/,/^    }/p' "$f" | head -8
+          done
+
       - name: Install packages
         run: flutter pub get
 
@@ -90,6 +105,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload debug APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lumen-debug-apk
@@ -97,6 +113,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload release APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lumen-release-apk
