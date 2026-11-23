@@ -83,12 +83,27 @@ jobs:
       - name: Build debug APK
         # No pipe here: a piped command reports the exit status of the pipe's
         # last stage, which would hide a failed build.
-        run: flutter build apk --debug
+        # Retried because Maven Central rate-limits (HTTP 429) on busy days.
+        run: |
+          for attempt in 1 2 3; do
+            if flutter build apk --debug; then exit 0; fi
+            echo "::warning::debug build attempt $attempt failed, retrying in 30s"
+            sleep 30
+          done
+          echo "debug build failed after 3 attempts"
+          exit 1
 
       - name: Build release APK
         # The Flutter template signs release builds with the debug keystore, so
         # this installs anywhere. Fine for testing, not for the Play Store.
-        run: flutter build apk --release
+        run: |
+          for attempt in 1 2 3; do
+            if flutter build apk --release; then exit 0; fi
+            echo "::warning::release build attempt $attempt failed, retrying in 30s"
+            sleep 30
+          done
+          echo "release build failed after 3 attempts"
+          exit 1
 
       - name: Show what was produced
         if: always()
