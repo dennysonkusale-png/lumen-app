@@ -47,6 +47,7 @@ class _EditorScreenState extends State<EditorScreen> {
   String? _xformMode;              // move | scale | rotate
   Layer? _xformBase;
   Offset _xformStartLocal = Offset.zero;
+  Offset? _cropStart;
   DocPoint? _dragLayerStart;
   Layer? _dragLayer;
   Offset _startFocal = Offset.zero;
@@ -247,26 +248,92 @@ class _EditorScreenState extends State<EditorScreen> {
             c.refresh(force: true);
           });
         }
-        return GestureDetector(
-          onScaleStart: _onScaleStart,
-          onScaleUpdate: _onScaleUpdate,
-          onScaleEnd: _onScaleEnd,
-          onDoubleTap: () {
-            c.resetView();
-            c.refresh();
-          },
-          child: Container(
-            color: const Color(0xFF08080A),
-            child: SizedBox.expand(
-              child: CustomPaint(painter: _CanvasPainter(c)),
+        return Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: GestureDetector(
+                onScaleStart: _onScaleStart,
+                onScaleUpdate: _onScaleUpdate,
+                onScaleEnd: _onScaleEnd,
+                onDoubleTap: () {
+                  c.resetView();
+                  c.refresh();
+                },
+                child: Container(
+                  color: const Color(0xFF08080A),
+                  child: SizedBox.expand(
+                    child: CustomPaint(painter: _CanvasPainter(c)),
+                  ),
+                ),
+              ),
             ),
-          ),
+            if (c.selectedLayer != null && !c.croppingLayer)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 18,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      c.deleteSelectedLayer();
+                      _toast('Layer deleted');
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xE62A1218),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFFF6B6B), width: 1.5),
+                        boxShadow: const <BoxShadow>[
+                          BoxShadow(color: Color(0x66000000), blurRadius: 12, offset: Offset(0, 4)),
+                        ],
+                      ),
+                      child: const Icon(Icons.delete_outline,
+                          color: Color(0xFFFF8A8A), size: 22),
+                    ),
+                  ),
+                ),
+              ),
+            if (c.croppingLayer)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 18,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: () {
+                      c.endLayerCrop();
+                      _toast('Crop done');
+                    },
+                    child: Container(
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: kAccent,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text('Done',
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
   }
 
   void _onScaleStart(ScaleStartDetails details) {
+    if (c.croppingLayer) {
+      _cropStart = details.localFocalPoint;
+      c.cropPreview = Rect.fromPoints(details.localFocalPoint, details.localFocalPoint);
+      c.refresh();
+      return;
+    }
     if (c.pickingColor) {
       c.sampleAt(c.screenToDoc(details.localFocalPoint)).then((ui.Color? picked) {
         if (picked != null) {
@@ -328,6 +395,11 @@ class _EditorScreenState extends State<EditorScreen> {
       c.extendMaskStroke(c.screenToDoc(details.localFocalPoint));
       return;
     }
+    if (c.croppingLayer && _cropStart != null) {
+      c.cropPreview = Rect.fromPoints(_cropStart!, details.localFocalPoint);
+      c.refresh();
+      return;
+    }
     if (_xformMode != null && _xformBase != null) {
       _applyXform(details.localFocalPoint);
       return;
@@ -382,7 +454,37 @@ class _EditorScreenState extends State<EditorScreen> {
     c.refresh();
   }
 
+  /// Screen point → 0..1 inside the layer's (rotated) box.
+  List<double> _toLayerUv(Layer layer, Offset point) {
+    final double s = c.viewScale;
+    final Offset origin = c.docToScreen(0, 0);
+    final double cx = origin.dx + layer.x * c.docW * s;
+    final double cy = origin.dy + layer.y * c.docH * s;
+    final double a = -layer.rotation * math.pi / 180.0;
+    final double dx = point.dx - cx;
+    final double dy = point.dy - cy;
+    final double rx = dx * math.cos(a) - dy * math.sin(a);
+    final double ry = dx * math.sin(a) + dy * math.cos(a);
+    final double w = layer.w * c.docW * s;
+    final double h = layer.h * c.docH * s;
+    return <double>[rx / w + 0.5, ry / h + 0.5];
+  }
+
   void _onScaleEnd(ScaleEndDetails details) {
+    if (c.croppingLayer) {
+      final Layer? layer = c.selectedLayer;
+      final Rect? preview = c.cropPreview;
+      final Offset? start = _cropStart;
+      _cropStart = null;
+      if (layer != null && preview != null && start != null && preview.width > 8 && preview.height > 8) {
+        final List<double> a = _toLayerUv(layer, start);
+        final List<double> b = _toLayerUv(layer, details.localFocalPoint);
+        c.applyImageCrop(layer, a[0], a[1], b[0], b[1]);
+      }
+      c.cropPreview = null;
+      c.refresh();
+      return;
+    }
     _xformMode = null;
     _xformBase = null;
     if (c.tool == 'retouch') c.endStroke();
@@ -934,6 +1036,52 @@ class _CanvasPainter extends CustomPainter {
         );
       }
       canvas.restore();
+    }
+
+    if (c.croppingLayer) {
+      final Layer? layer = c.selectedLayer;
+      if (layer != null) {
+        final double s = c.viewScale;
+        final Offset origin = c.docToScreen(0, 0);
+        canvas.save();
+        canvas.translate(origin.dx + layer.x * c.docW * s,
+            origin.dy + layer.y * c.docH * s);
+        canvas.rotate(layer.rotation * math.pi / 180.0);
+        final Rect box = Rect.fromCenter(
+          center: Offset.zero,
+          width: layer.w * c.docW * s,
+          height: layer.h * c.docH * s,
+        );
+        canvas.drawRect(
+          box,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = const Color(0x99FFFFFF),
+        );
+        canvas.restore();
+      }
+      final Rect? pv = c.cropPreview;
+      if (pv != null) {
+        final Path full = Path()..addRect(Offset.zero & size);
+        final Path hole = Path()..addRect(pv);
+        canvas.drawPath(
+          Path.combine(PathOperation.difference, full, hole),
+          Paint()..color = const Color(0x99000000),
+        );
+        canvas.drawRect(
+          pv,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2
+            ..color = kAccent,
+        );
+        for (final Offset corner in <Offset>[
+          pv.topLeft, pv.topRight, pv.bottomRight, pv.bottomLeft
+        ]) {
+          canvas.drawCircle(corner, 6, Paint()..color = kText);
+        }
+      }
     }
   }
 

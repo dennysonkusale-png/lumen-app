@@ -627,6 +627,45 @@ class StickerSheet extends StatelessWidget {
             onChanged: (double v) => c.mutateLayer(c.selectedLayer!, (Layer l) => l.rotation = v),
           ),
         ],
+        if (c.selectedLayer != null && c.selectedLayer!.type == LayerType.image) ...<Widget>[
+          const SectionLabel('Crop image'),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: Text(
+              'Start crop, then drag a box on the photo to keep only that part of the image.',
+              style: TextStyle(fontSize: 10.5, color: Color(0xFF8A8A94), height: 1.5),
+            ),
+          ),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: PillButton(
+                  label: c.croppingLayer ? 'Cropping…' : 'Start crop',
+                  primary: c.croppingLayer,
+                  onTap: c.croppingLayer ? c.endLayerCrop : c.startLayerCrop,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: PillButton(label: 'Reset crop', onTap: c.resetLayerCrop),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ChipRow(
+            labels: const <String>['Rectangle', 'Ellipse'],
+            selected: c.selectedLayer!.cropShape == 'ellipse' ? 1 : 0,
+            onSelected: (int i) => c.setCropShape(i == 0 ? 'rect' : 'ellipse'),
+          ),
+          SliderRow(
+            label: 'Feather',
+            value: c.selectedLayer!.feather * 100,
+            min: 0,
+            max: 60,
+            defaultValue: 0,
+            onChanged: (double v) => c.setCropFeather(v / 100),
+          ),
+        ],
         if (c.selectedLayer != null && c.selectedLayer!.type == LayerType.shape) ...<Widget>[
           const SectionLabel('Shape colour'),
           SizedBox(

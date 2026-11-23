@@ -482,6 +482,87 @@ class EditorController extends ChangeNotifier {
   }
 
   /* --------------------------------------------------------------------- */
+  /* cropping an inserted image                                             */
+  /* --------------------------------------------------------------------- */
+
+  bool croppingLayer = false;
+  ui.Rect? cropPreview;   // live drag rectangle, screen space
+
+  void startLayerCrop() {
+    final Layer? l = selectedLayer;
+    if (l == null || l.type != LayerType.image) return;
+    croppingLayer = true;
+    cropPreview = null;
+    notifyListeners();
+  }
+
+  void endLayerCrop() {
+    croppingLayer = false;
+    cropPreview = null;
+    notifyListeners();
+  }
+
+  void resetLayerCrop() {
+    final Layer? l = selectedLayer;
+    if (l == null) return;
+    pushHistory();
+    l.srcX = 0;
+    l.srcY = 0;
+    l.srcW = 1;
+    l.srcH = 1;
+    l.cropShape = 'rect';
+    l.feather = 0;
+    _touch();
+  }
+
+  void setCropShape(String shape) {
+    final Layer? l = selectedLayer;
+    if (l == null) return;
+    l.cropShape = shape;
+    _touch();
+  }
+
+  void setCropFeather(double value) {
+    final Layer? l = selectedLayer;
+    if (l == null) return;
+    l.feather = value;
+    _touch();
+  }
+
+  /// [u0]..[v1] are 0..1 inside the layer's current box.
+  void applyImageCrop(Layer layer, double u0, double v0, double u1, double v1) {
+    final double x0 = clampDouble(math.min(u0, u1), 0, 1);
+    final double x1 = clampDouble(math.max(u0, u1), 0, 1);
+    final double y0 = clampDouble(math.min(v0, v1), 0, 1);
+    final double y1 = clampDouble(math.max(v0, v1), 0, 1);
+    if ((x1 - x0) < 0.03 || (y1 - y0) < 0.03) return;
+
+    pushHistory();
+    final double cxLocal = ((x0 + x1) / 2 - 0.5) * layer.w * docW;
+    final double cyLocal = ((y0 + y1) / 2 - 0.5) * layer.h * docH;
+    final double a = layer.rotation * math.pi / 180.0;
+    final double dx = cxLocal * math.cos(a) - cyLocal * math.sin(a);
+    final double dy = cxLocal * math.sin(a) + cyLocal * math.cos(a);
+
+    layer.x = clampDouble(layer.x + dx / docW, -0.5, 1.5);
+    layer.y = clampDouble(layer.y + dy / docH, -0.5, 1.5);
+    layer.w = math.max(0.02, layer.w * (x1 - x0));
+    layer.h = math.max(0.02, layer.h * (y1 - y0));
+    layer.srcX = clampDouble(layer.srcX + x0 * layer.srcW, 0, 1);
+    layer.srcY = clampDouble(layer.srcY + y0 * layer.srcH, 0, 1);
+    layer.srcW = clampDouble(layer.srcW * (x1 - x0), 0.01, 1);
+    layer.srcH = clampDouble(layer.srcH * (y1 - y0), 0.01, 1);
+    cropPreview = null;
+    _touch();
+  }
+
+  void deleteSelectedLayer() {
+    final Layer? l = selectedLayer;
+    if (l == null) return;
+    removeLayer(l.id);
+  }
+
+  /* --------------------------------------------------------------------- */
   /* extra photo layers                                                     */
   /* --------------------------------------------------------------------- */
 

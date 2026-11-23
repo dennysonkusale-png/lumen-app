@@ -563,12 +563,40 @@ FontWeight _weight(int w) {
 void _drawImageLayer(ui.Canvas canvas, Layer layer, ui.Rect rect) {
   final ui.Image? img = layer.pixels;
   if (img == null) return;
-  canvas.drawImageRect(
-    img,
-    ui.Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
-    rect,
-    ui.Paint()..filterQuality = ui.FilterQuality.high,
+  final double iw = img.width.toDouble();
+  final double ih = img.height.toDouble();
+  final ui.Rect src = ui.Rect.fromLTWH(
+    iw * clampDouble(layer.srcX, 0, 1),
+    ih * clampDouble(layer.srcY, 0, 1),
+    iw * clampDouble(layer.srcW, 0.01, 1),
+    ih * clampDouble(layer.srcH, 0.01, 1),
   );
+  final ui.Paint paint = ui.Paint()..filterQuality = ui.FilterQuality.high;
+
+  final bool shaped = layer.cropShape != 'rect' || layer.feather > 0;
+  if (!shaped) {
+    canvas.drawImageRect(img, src, rect, paint);
+    return;
+  }
+
+  canvas.saveLayer(null, ui.Paint());
+  canvas.drawImageRect(img, src, rect, paint);
+
+  final ui.Paint maskPaint = ui.Paint()..blendMode = ui.BlendMode.dstIn;
+  if (layer.feather > 0) {
+    maskPaint.maskFilter = ui.MaskFilter.blur(
+      ui.BlurStyle.normal,
+      clampDouble(layer.feather, 0, 1) * rect.shortestSide * 0.35 + 0.5,
+    );
+  }
+  final ui.Path path = ui.Path();
+  if (layer.cropShape == 'ellipse') {
+    path.addOval(rect.deflate(layer.feather * rect.shortestSide * 0.35));
+  } else {
+    path.addRect(rect.deflate(layer.feather * rect.shortestSide * 0.35));
+  }
+  canvas.drawPath(path, maskPaint);
+  canvas.restore();
 }
 
 void _drawSticker(ui.Canvas canvas, Layer layer, double docHeight) {

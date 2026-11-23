@@ -242,6 +242,9 @@ class Layer {
   String shape;         // rect | ellipse | triangle | star | heart | arrow | line
   String emoji;
   ui.Image? pixels;     // only for LayerType.image
+  double srcX, srcY, srcW, srcH;   // visible part of the source image, 0..1
+  String cropShape;                // rect | ellipse
+  double feather;                  // 0..1 of the shorter edge
   double x, y, w, h;    // normalised to the document, x/y = centre
   double rotation;
   double opacity;
@@ -264,6 +267,12 @@ class Layer {
     this.shape = 'rect',
     this.emoji = '✨',
     this.pixels,
+    this.srcX = 0,
+    this.srcY = 0,
+    this.srcW = 1,
+    this.srcH = 1,
+    this.cropShape = 'rect',
+    this.feather = 0,
     this.x = 0.5,
     this.y = 0.5,
     this.w = 0.6,
@@ -290,6 +299,12 @@ class Layer {
         shape: shape,
         emoji: emoji,
         pixels: pixels,
+        srcX: srcX,
+        srcY: srcY,
+        srcW: srcW,
+        srcH: srcH,
+        cropShape: cropShape,
+        feather: feather,
         x: x,
         y: y,
         w: w,
