@@ -1066,8 +1066,8 @@ class _CanvasPainter extends CustomPainter {
           box,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1
-            ..color = const Color(0x99FFFFFF),
+            ..strokeWidth = 1.5
+            ..color = const Color(0xCCFFFFFF),
         );
         canvas.restore();
       }
@@ -1079,17 +1079,50 @@ class _CanvasPainter extends CustomPainter {
           Path.combine(PathOperation.difference, full, hole),
           Paint()..color = const Color(0x99000000),
         );
+        // dark halo first, then a crisp white frame on top
+        canvas.drawRect(
+          pv.inflate(1.5),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 4
+            ..color = const Color(0x99000000),
+        );
         canvas.drawRect(
           pv,
           Paint()
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 2
-            ..color = kAccent,
+            ..strokeWidth = 2.5
+            ..color = const Color(0xFFFFFFFF),
         );
+        // third-lines inside the selection, like a camera crop grid
+        final Paint grid = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = const Color(0x66FFFFFF);
+        for (int i = 1; i < 3; i++) {
+          canvas.drawLine(
+            Offset(pv.left + pv.width * i / 3, pv.top),
+            Offset(pv.left + pv.width * i / 3, pv.bottom),
+            grid,
+          );
+          canvas.drawLine(
+            Offset(pv.left, pv.top + pv.height * i / 3),
+            Offset(pv.right, pv.top + pv.height * i / 3),
+            grid,
+          );
+        }
         for (final Offset corner in <Offset>[
           pv.topLeft, pv.topRight, pv.bottomRight, pv.bottomLeft
         ]) {
-          canvas.drawCircle(corner, 6, Paint()..color = kText);
+          canvas.drawCircle(corner, 7, Paint()..color = const Color(0xFFFFFFFF));
+          canvas.drawCircle(
+            corner,
+            7,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.5
+              ..color = kAccent,
+          );
         }
       }
     }
