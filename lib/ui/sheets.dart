@@ -597,7 +597,7 @@ class StickerSheet extends StatelessWidget {
             ),
           ),
         ),
-        if (c.selectedLayer != null) ...<Widget>[
+        if (c.selectedLayer != null && !c.selectedLayer!.frame) ...<Widget>[
           const SectionLabel('Selected layer'),
           SliderRow(
             label: 'Size',
@@ -625,6 +625,64 @@ class StickerSheet extends StatelessWidget {
             max: 180,
             defaultValue: 0,
             onChanged: (double v) => c.mutateLayer(c.selectedLayer!, (Layer l) => l.rotation = v),
+          ),
+        ],
+        if (c.selectedLayer != null && c.selectedLayer!.frame) ...<Widget>[
+          const SectionLabel('Collage frame'),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: Text(
+              'The frame is fixed. Drag on the photo to move the image inside it, '
+              'or use the slider to zoom.',
+              style: TextStyle(fontSize: 10.5, color: Color(0xFF8A8A94), height: 1.5),
+            ),
+          ),
+          SliderRow(
+            label: 'Image size',
+            value: c.selectedLayer!.zoom * 100,
+            min: 100,
+            max: 320,
+            defaultValue: 100,
+            onChanged: (double v) => c.mutateLayer(
+              c.selectedLayer!,
+              (Layer l) => l.zoom = v / 100,
+            ),
+          ),
+          SliderRow(
+            label: 'Border',
+            value: c.selectedLayer!.borderWidth * 1000,
+            min: 0,
+            max: 90,
+            defaultValue: 35,
+            onChanged: (double v) => c.setFrameStyle(width: v / 1000),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 34,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: <Widget>[
+                for (int i = 0; i < kSwatches.length; i++)
+                  GestureDetector(
+                    onTap: () => c.setFrameStyle(color: kSwatches[i]),
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: Color(kSwatches[i]),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: c.selectedLayer!.borderColor == kSwatches[i]
+                              ? Colors.white
+                              : const Color(0xFF2E2E3A),
+                          width: c.selectedLayer!.borderColor == kSwatches[i] ? 2 : 1,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
         if (c.selectedLayer != null && c.selectedLayer!.type == LayerType.image) ...<Widget>[

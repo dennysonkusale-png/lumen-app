@@ -51,6 +51,10 @@ class _EditorScreenState extends State<EditorScreen> {
   Offset? _cropStart;
   Offset? _cropLast;
   bool _overBin = false;
+  Layer? _panFrame;
+  double _panStartU = 0.5;
+  double _panStartV = 0.5;
+  Offset _panStartLocal = Offset.zero;
 
   Rect get _binRect => Rect.fromCenter(
         center: Offset(c.viewport.width / 2, c.viewport.height - 18 - 24),
@@ -368,50 +372,68 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _openCollage() {
-    const List<List<Object>> layouts = <List<Object>>[
-      <Object>['2 × 2', 2, 2],
-      <Object>['3 × 1', 3, 1],
-      <Object>['2 × 3', 2, 3],
-      <Object>['1 × 2', 1, 2],
-    ];
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: kPanel,
+      isScrollControlled: true,
       builder: (BuildContext context) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.62,
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const Text('Collage',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
-              const Text('Pick a grid, then choose the photos to fill it.',
+              const Text('Pick a layout, then choose the photos to fill it.',
                   style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C))),
               const SizedBox(height: 14),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: <Widget>[
-                  for (final List<Object> l in layouts)
-                    GestureDetector(
+              Expanded(
+                child: GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 9,
+                    crossAxisSpacing: 9,
+                    childAspectRatio: 1.15,
+                  ),
+                  itemCount: kCollageLayouts.length,
+                  itemBuilder: (BuildContext context, int i) {
+                    final CollageLayout l = kCollageLayouts[i];
+                    return GestureDetector(
                       onTap: () {
                         Navigator.of(context).pop();
-                        _runCollage(l[1] as int, l[2] as int);
+                        _runCollage(l);
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF20202A),
-                          borderRadius: BorderRadius.circular(10),
+                          color: const Color(0xFF1C1C24),
+                          borderRadius: BorderRadius.circular(11),
+                          border: Border.all(color: kBorder),
                         ),
-                        child: Text(l[0] as String,
-                            style: const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w600)),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            SizedBox(
+                              width: 42,
+                              height: 42,
+                              child: CustomPaint(
+                                painter: _LayoutPainter(l.cells),
+                              ),
+                            ),
+                            const SizedBox(height: 7),
+                            Text(l.name,
+                                style: const TextStyle(
+                                    fontSize: 11.5, fontWeight: FontWeight.w600)),
+                            Text(l.hint,
+                                style: const TextStyle(
+                                    fontSize: 9, color: Color(0xFF71717E))),
+                          ],
+                        ),
                       ),
-                    ),
-                ],
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -420,18 +442,18 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
-  Future<void> _runCollage(int cols, int rows) async {
+  Future<void> _runCollage(CollageLayout layout) async {
     try {
       final List<XFile> files = await ImagePicker().pickMultiImage();
       if (files.isEmpty) return;
       final List<ui.Image> images = <ui.Image>[];
-      for (final XFile file in files.take(cols * rows)) {
+      for (final XFile file in files.take(layout.count)) {
         final Uint8List bytes = await file.readAsBytes();
         final ui.Codec codec = await ui.instantiateImageCodec(bytes);
         final ui.FrameInfo frame = await codec.getNextFrame();
         images.add(frame.image);
       }
-      await c.newCollage(cols, rows, images);
+      await c.newCollage(layout, images);
       _toast('${images.length} photo${images.length == 1 ? '' : 's'} placed');
     } catch (error) {
       _toast('Could not build that collage');
@@ -721,7 +743,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 ),
               ),
             ),
-            if (c.selectedLayer != null && !c.croppingLayer)
+            if (c.selectedLayer != null && !c.croppingLayer && !(c.selectedLayer!.frame))
               Positioned(
                 left: 0,
                 right: 0,
@@ -855,8 +877,16 @@ class _EditorScreenState extends State<EditorScreen> {
     if (hit != null) {
       c.selectLayer(hit.id);
       c.pushHistory();
-      _dragLayer = hit;
-      _dragLayerStart = c.screenToDoc(details.localFocalPoint);
+      if (hit.frame) {
+        // collage cells are fixed: dragging moves the photo inside the frame
+        _panFrame = hit;
+        _panStartU = hit.panU;
+        _panStartV = hit.panV;
+        _panStartLocal = details.localFocalPoint;
+      } else {
+        _dragLayer = hit;
+        _dragLayerStart = c.screenToDoc(details.localFocalPoint);
+      }
     }
   }
 
@@ -885,6 +915,16 @@ class _EditorScreenState extends State<EditorScreen> {
     }
     if (_xformMode != null && _xformBase != null) {
       _applyXform(details.localFocalPoint);
+      return;
+    }
+    if (_panFrame != null) {
+      final double cellW = _panFrame!.w * c.docW * c.viewScale;
+      final double cellH = _panFrame!.h * c.docH * c.viewScale;
+      final double dx = (details.localFocalPoint.dx - _panStartLocal.dx) / math.max(1, cellW);
+      final double dy = (details.localFocalPoint.dy - _panStartLocal.dy) / math.max(1, cellH);
+      _panFrame!.panU = clampDouble(_panStartU - dx, 0, 1);
+      _panFrame!.panV = clampDouble(_panStartV - dy, 0, 1);
+      c.refresh();
       return;
     }
     if (_dragLayer != null && _dragLayerStart != null) {
@@ -981,6 +1021,7 @@ class _EditorScreenState extends State<EditorScreen> {
       _toast('Layer deleted');
     }
     _overBin = false;
+    _panFrame = null;
     _dragLayer = null;
     _dragLayerStart = null;
   }
@@ -1645,4 +1686,39 @@ class _CanvasPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CanvasPainter oldDelegate) => true;
+}
+
+
+/// Draws a tiny diagram of a collage layout.
+class _LayoutPainter extends CustomPainter {
+  final List<Rect> cells;
+  _LayoutPainter(this.cells);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint fill = Paint()..color = const Color(0xFF6C5CE7).withOpacity(0.55);
+    final Paint edge = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = const Color(0xFF9A8CFF);
+    for (final Rect cell in cells) {
+      final Rect r = Rect.fromLTWH(
+        cell.left * size.width,
+        cell.top * size.height,
+        cell.width * size.width,
+        cell.height * size.height,
+      ).deflate(0.8);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(r, const Radius.circular(2)),
+        fill,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(r, const Radius.circular(2)),
+        edge,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _LayoutPainter oldDelegate) => false;
 }

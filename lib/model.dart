@@ -243,6 +243,11 @@ class Layer {
   String emoji;
   ui.Image? pixels;     // only for LayerType.image
   double srcX, srcY, srcW, srcH;   // visible part of the source image, 0..1
+  double zoom;                     // 1 = fills the frame, >1 zooms in
+  double panU, panV;               // 0..1 position of the zoomed image in the frame
+  int borderColor;                 // frame colour
+  double borderWidth;              // fraction of the shorter edge
+  bool frame;                      // collage cell: cannot be moved or resized
   String cropShape;                // rect | ellipse
   double feather;                  // 0..1 of the shorter edge
   double x, y, w, h;    // normalised to the document, x/y = centre
@@ -273,6 +278,12 @@ class Layer {
     this.srcH = 1,
     this.cropShape = 'rect',
     this.feather = 0,
+    this.zoom = 1,
+    this.panU = 0.5,
+    this.panV = 0.5,
+    this.borderColor = 0x00000000,
+    this.borderWidth = 0,
+    this.frame = false,
     this.x = 0.5,
     this.y = 0.5,
     this.w = 0.6,
@@ -305,6 +316,12 @@ class Layer {
         srcH: srcH,
         cropShape: cropShape,
         feather: feather,
+        zoom: zoom,
+        panU: panU,
+        panV: panV,
+        borderColor: borderColor,
+        borderWidth: borderWidth,
+        frame: frame,
         x: x,
         y: y,
         w: w,
@@ -491,4 +508,56 @@ const List<TemplateDef> kTemplates = <TemplateDef>[
   TemplateDef('sale', 'Sale badge', 'Bold offer layout', 1080, 1080),
   TemplateDef('poster', 'Dark poster', 'Big title on black', 1080, 1350, dark: true),
   TemplateDef('caption', 'Caption bar', 'Photo with a bar', 1080, 1350),
+];
+
+
+/// Normalised cell rectangles for the built-in collage layouts.
+List<Rect> gridCells(int cols, int rows, {double gutter = 0.012}) {
+  final List<Rect> cells = <Rect>[];
+  final double cw = (1 - gutter * (cols + 1)) / cols;
+  final double ch = (1 - gutter * (rows + 1)) / rows;
+  for (int r = 0; r < rows; r++) {
+    for (int c = 0; c < cols; c++) {
+      cells.add(Rect.fromLTWH(
+        gutter + c * (cw + gutter),
+        gutter + r * (ch + gutter),
+        cw,
+        ch,
+      ));
+    }
+  }
+  return cells;
+}
+
+List<Rect> featureCells({double gutter = 0.012}) {
+  final double w = 1 - gutter * 2;
+  final double topH = (1 - gutter * 3) * 0.62;
+  final double botH = (1 - gutter * 3) - topH;
+  final double halfW = (w - gutter) / 2;
+  return <Rect>[
+    Rect.fromLTWH(gutter, gutter, w, topH),
+    Rect.fromLTWH(gutter, gutter * 2 + topH, halfW, botH),
+    Rect.fromLTWH(gutter * 2 + halfW, gutter * 2 + topH, halfW, botH),
+  ];
+}
+
+class CollageLayout {
+  final String name;
+  final String hint;
+  final int count;
+  final List<Rect> cells;
+  const CollageLayout(this.name, this.hint, this.count, this.cells);
+}
+
+final List<CollageLayout> kCollageLayouts = <CollageLayout>[
+  CollageLayout('Single', '1 photo', 1, gridCells(1, 1)),
+  CollageLayout('Duo', '2 side by side', 2, gridCells(2, 1)),
+  CollageLayout('Stack', '2 stacked', 2, gridCells(1, 2)),
+  CollageLayout('Quad', '4 in a grid', 4, gridCells(2, 2)),
+  CollageLayout('Trio', '3 across', 3, gridCells(3, 1)),
+  CollageLayout('Column', '3 stacked', 3, gridCells(1, 3)),
+  CollageLayout('Six', '6 in a grid', 6, gridCells(3, 2)),
+  CollageLayout('Nine', '9 in a grid', 9, gridCells(3, 3)),
+  CollageLayout('Feature', '1 big, 2 small', 3, featureCells()),
+  CollageLayout('Strip', '4 across', 4, gridCells(4, 1)),
 ];

@@ -563,39 +563,56 @@ FontWeight _weight(int w) {
 void _drawImageLayer(ui.Canvas canvas, Layer layer, ui.Rect rect) {
   final ui.Image? img = layer.pixels;
   if (img == null) return;
+
+  final double bw = clampDouble(layer.borderWidth, 0, 0.4) * rect.shortestSide;
+  final ui.Rect inner = rect.deflate(bw);
+  if (bw > 0.5 && inner.width > 2 && inner.height > 2) {
+    canvas.drawRect(rect, ui.Paint()..color = ui.Color(layer.borderColor));
+  }
+  if (inner.width < 2 || inner.height < 2) return;
+
+  final double zoom = layer.zoom < 0.2 ? 0.2 : layer.zoom;
+  final double srcW = clampDouble(layer.srcW / zoom, 0.001, 1);
+  final double srcH = clampDouble(layer.srcH / zoom, 0.001, 1);
+  final double srcX = clampDouble(
+      layer.srcX + (layer.srcW - srcW) * clampDouble(layer.panU, 0, 1), 0, math.max(0, 1 - srcW));
+  final double srcY = clampDouble(
+      layer.srcY + (layer.srcH - srcH) * clampDouble(layer.panV, 0, 1), 0, math.max(0, 1 - srcH));
+
   final double iw = img.width.toDouble();
   final double ih = img.height.toDouble();
-  final ui.Rect src = ui.Rect.fromLTWH(
-    iw * clampDouble(layer.srcX, 0, 1),
-    ih * clampDouble(layer.srcY, 0, 1),
-    iw * clampDouble(layer.srcW, 0.01, 1),
-    ih * clampDouble(layer.srcH, 0.01, 1),
-  );
+  final ui.Rect src = ui.Rect.fromLTWH(srcX * iw, srcY * ih, srcW * iw, srcH * ih);
   final ui.Paint paint = ui.Paint()..filterQuality = ui.FilterQuality.high;
 
   final bool shaped = layer.cropShape != 'rect' || layer.feather > 0;
   if (!shaped) {
-    canvas.drawImageRect(img, src, rect, paint);
+    canvas.save();
+    canvas.clipRect(inner);
+    canvas.drawImageRect(img, src, inner, paint);
+    canvas.restore();
     return;
   }
 
+  canvas.save();
+  canvas.clipRect(inner);
   canvas.saveLayer(null, ui.Paint());
-  canvas.drawImageRect(img, src, rect, paint);
-
+  canvas.drawImageRect(img, src, inner, paint);
   final ui.Paint maskPaint = ui.Paint()..blendMode = ui.BlendMode.dstIn;
   if (layer.feather > 0) {
     maskPaint.maskFilter = ui.MaskFilter.blur(
       ui.BlurStyle.normal,
-      clampDouble(layer.feather, 0, 1) * rect.shortestSide * 0.35 + 0.5,
+      clampDouble(layer.feather, 0, 1) * inner.shortestSide * 0.35 + 0.5,
     );
   }
   final ui.Path path = ui.Path();
+  final ui.Rect shapeRect = inner.deflate(layer.feather * inner.shortestSide * 0.35);
   if (layer.cropShape == 'ellipse') {
-    path.addOval(rect.deflate(layer.feather * rect.shortestSide * 0.35));
+    path.addOval(shapeRect);
   } else {
-    path.addRect(rect.deflate(layer.feather * rect.shortestSide * 0.35));
+    path.addRect(shapeRect);
   }
   canvas.drawPath(path, maskPaint);
+  canvas.restore();
   canvas.restore();
 }
 
@@ -687,10 +704,90 @@ void _drawShape(ui.Canvas canvas, Layer layer, ui.Rect rect) {
   }
 }
 
-/// Small square preview of a preset, rendered from the user's own photo.
+/// A neutral reference scene, used when the document has no tonal range of its
+/// own (a blank canvas), so the presets still show what they do.
+Future<ui.Image> _referenceBase(double maxEdge) async {
+  const int w = 120;
+  const int h = 160;
+  final double scale = maxEdge / w;
+  final ui.PictureRecorder rec = ui.PictureRecorder();
+  final ui.Canvas canvas = ui.Canvas(rec);
+  canvas.scale(scale);
+  canvas.drawRect(
+    const ui.Rect.fromLTWH(0, 0, 120, 160),
+    ui.Paint()
+      ..shader = ui.Gradient.linear(
+        const ui.Offset(0, 0),
+        const ui.Offset(0, 160),
+        <ui.Color>[
+          const ui.Color(0xFF14243F),
+          const ui.Color(0xFF4A5E86),
+          const ui.Color(0xFFC89B7B),
+          const ui.Color(0xFFE8C79A),
+        ],
+        <double>[0.0, 0.45, 0.72, 1.0],
+      ),
+  );
+  canvas.drawCircle(
+    const ui.Offset(84, 58),
+    16,
+    ui.Paint()..color = const ui.Color(0xFFFFE9B0),
+  );
+  canvas.drawPath(
+    ui.Path()
+      ..moveTo(0, 118)
+      ..lineTo(34, 96)
+      ..lineTo(64, 112)
+      ..lineTo(96, 88)
+      ..lineTo(120, 104)
+      ..lineTo(120, 160)
+      ..lineTo(0, 160)
+      ..close(),
+    ui.Paint()..color = const ui.Color(0xFF23303F),
+  );
+  canvas.drawPath(
+    ui.Path()
+      ..moveTo(0, 138)
+      ..lineTo(48, 122)
+      ..lineTo(88, 134)
+      ..lineTo(120, 126)
+      ..lineTo(120, 160)
+      ..lineTo(0, 160)
+      ..close(),
+    ui.Paint()..color = const ui.Color(0xFF16202B),
+  );
+  return imageFromPicture(rec.endRecording(), (w * scale).round(), (h * scale).round());
+}
+
+bool _isFlat(Uint8List px) {
+  double sum = 0, sumSq = 0;
+  int n = 0;
+  for (int i = 0; i < px.length; i += 4 * 17) {
+    final double l = 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    sum += l;
+    sumSq += l * l;
+    n++;
+  }
+  if (n < 8) return true;
+  final double mean = sum / n;
+  return math.sqrt(math.max(0, sumSq / n - mean * mean)) < 5;
+}
+
+/// Small preview of a preset: the user's photo when it has tonal range,
+/// otherwise a reference scene so a blank canvas still shows the looks.
 Future<ui.Image> buildThumb(Project project, FilterPreset preset, double maxEdge) async {
-  final double s = maxEdge / math.max(project.crop.w, project.crop.h);
-  final ui.Image base = await buildBase(project, s);
+  ui.Image base;
+  try {
+    final double s = maxEdge / math.max(project.crop.w, project.crop.h);
+    base = await buildBase(project, s);
+    final Uint8List probe = await pixelsOf(base);
+    if (_isFlat(probe)) {
+      base.dispose();
+      base = await _referenceBase(maxEdge);
+    }
+  } catch (_) {
+    base = await _referenceBase(maxEdge);
+  }
   final int w = base.width;
   final int h = base.height;
   final Uint8List px = await pixelsOf(base);

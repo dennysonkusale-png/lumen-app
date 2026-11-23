@@ -670,23 +670,23 @@ class EditorController extends ChangeNotifier {
     _touch();
   }
 
-  /// Builds a grid collage from [images] on a square canvas.
-  Future<void> newCollage(int cols, int rows, List<ui.Image> images) async {
+  /// Builds a collage from [images] using a fixed, non-movable layout.
+  Future<void> newCollage(
+    CollageLayout layout,
+    List<ui.Image> images, {
+    int border = 0xFFFFFFFF,
+    double borderWidth = 0.035,
+  }) async {
     const int size = 1080;
-    const double gutter = 18;
     await newDocument(size, size, white: true);
     if (images.isEmpty) return;
 
-    final double cellW = (size - gutter * (cols + 1)) / cols;
-    final double cellH = (size - gutter * (rows + 1)) / rows;
-    final double cellAspect = cellW / cellH;
-
-    for (int i = 0; i < cols * rows && i < images.length; i++) {
+    for (int i = 0; i < layout.cells.length && i < images.length; i++) {
+      final Rect cell = layout.cells[i];
       final ui.Image image = images[i];
-      final int col = i % cols;
-      final int row = i ~/ cols;
-      final double left = gutter + col * (cellW + gutter);
-      final double top = gutter + row * (cellH + gutter);
+      final double cellW = cell.width * size;
+      final double cellH = cell.height * size;
+      final double cellAspect = cellW / cellH;
 
       double srcW = 1, srcH = 1, srcX = 0, srcY = 0;
       final double imgAspect = image.width / image.height;
@@ -706,14 +706,35 @@ class EditorController extends ChangeNotifier {
         srcY: srcY,
         srcW: srcW,
         srcH: srcH,
-        x: (left + cellW / 2) / size,
-        y: (top + cellH / 2) / size,
-        w: cellW / size,
-        h: cellH / size,
+        frame: true,
+        borderColor: border,
+        borderWidth: borderWidth,
+        zoom: 1,
+        x: cell.center.dx,
+        y: cell.center.dy,
+        w: cell.width,
+        h: cell.height,
       ));
     }
     _revision++;
     _touch();
+  }
+
+  /// Border colour / width for every collage frame at once.
+  void setFrameStyle({int? color, double? width}) {
+    bool changed = false;
+    for (final Layer l in project.layers) {
+      if (!l.frame) continue;
+      if (color != null) {
+        l.borderColor = color;
+        changed = true;
+      }
+      if (width != null) {
+        l.borderWidth = width;
+        changed = true;
+      }
+    }
+    if (changed) _touch();
   }
 
   /* --------------------------------------------------------------------- */
