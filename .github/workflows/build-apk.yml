@@ -70,6 +70,11 @@ jobs:
         # last stage, which would hide a failed build.
         run: flutter build apk --debug
 
+      - name: Build release APK
+        # The Flutter template signs release builds with the debug keystore, so
+        # this installs anywhere. Fine for testing, not for the Play Store.
+        run: flutter build apk --release
+
       - name: Show what was produced
         if: always()
         run: |
@@ -84,9 +89,16 @@ jobs:
           path: analyze.txt
           if-no-files-found: ignore
 
-      - name: Upload APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: lumen-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumen-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
