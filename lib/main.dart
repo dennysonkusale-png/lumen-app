@@ -441,172 +441,17 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Future<void> _pickFromFiles() async {
     try {
-      final FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        withData: true,
-      );
-      final PlatformFile? file = result?.files.first;
-      final Uint8List? bytes = file?.bytes;
-      if (bytes == null) return;
-      await c.loadBytes(bytes, (file!.name).replaceAll(RegExp(r'\.[^.]+$'), ''));
+      // file_picker 13: returns a plain list; bytes are read asynchronously.
+      final List<PlatformFile> files =
+          await FilePicker.pickFiles(type: FileType.image);
+      if (files.isEmpty) return;
+      final PlatformFile file = files.first;
+      final Uint8List bytes = await file.readAsBytes();
+      await c.loadBytes(bytes, file.name.replaceAll(RegExp(r'\.[^.]+$'), ''));
     } catch (error) {
       _toast('Could not open that file');
       debugPrint('file picker failed: $error');
     }
-  }
-
-  Widget _homeButton({
-    required String label,
-    required IconData icon,
-    required bool primary,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 54,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: primary ? kAccent : const Color(0xFF1A1A21),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: primary ? kAccent : const Color(0xFF2C2C38),
-            width: 1.2,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Icon(icon, size: 19, color: primary ? Colors.white : const Color(0xFFD6D6DE)),
-            const SizedBox(width: 9),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: primary ? Colors.white : const Color(0xFFEDEDF3),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openNewFileSheet() {
-    const List<List<Object>> sizes = <List<Object>>[
-      <Object>['Square', 1080, 1080],
-      <Object>['Portrait', 1080, 1350],
-      <Object>['Story', 1080, 1920],
-      <Object>['Landscape', 1920, 1080],
-      <Object>['Wide', 2048, 1152],
-    ];
-    int selected = 0;
-    bool white = true;
-
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: kPanel,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setSheet) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  const Text('New file',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Start with a blank canvas, then add photos, text and shapes.',
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C)),
-                  ),
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: <Widget>[
-                      for (int i = 0; i < sizes.length; i++)
-                        GestureDetector(
-                          onTap: () => setSheet(() => selected = i),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-                            decoration: BoxDecoration(
-                              color: selected == i
-                                  ? const Color(0xFF26224A)
-                                  : const Color(0xFF20202A),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: selected == i
-                                    ? const Color(0xFF4B3FBF)
-                                    : Colors.transparent,
-                              ),
-                            ),
-                            child: Column(
-                              children: <Widget>[
-                                Text(
-                                  sizes[i][0] as String,
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: selected == i
-                                        ? const Color(0xFFB9AEFF)
-                                        : const Color(0xFFD6D6DE),
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '${sizes[i][1]} × ${sizes[i][2]}',
-                                  style: const TextStyle(
-                                      fontSize: 9.5, color: Color(0xFF71717E)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: <Widget>[
-                      const Expanded(
-                        child: Text('Background', style: TextStyle(fontSize: 12.5)),
-                      ),
-                      PillButton(
-                        label: 'White',
-                        primary: white,
-                        onTap: () => setSheet(() => white = true),
-                      ),
-                      const SizedBox(width: 8),
-                      PillButton(
-                        label: 'Transparent',
-                        primary: !white,
-                        onTap: () => setSheet(() => white = false),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  PillButton(
-                    label: 'Create',
-                    primary: true,
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      c.newDocument(
-                        sizes[selected][1] as int,
-                        sizes[selected][2] as int,
-                        white: white,
-                      );
-                    },
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   Widget _buildTopBar() {
