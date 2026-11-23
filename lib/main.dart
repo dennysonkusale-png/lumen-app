@@ -48,6 +48,7 @@ class _EditorScreenState extends State<EditorScreen> {
   Layer? _xformBase;
   Offset _xformStartLocal = Offset.zero;
   Offset? _cropStart;
+  Offset? _cropLast;
   DocPoint? _dragLayerStart;
   Layer? _dragLayer;
   Offset _startFocal = Offset.zero;
@@ -334,6 +335,7 @@ class _EditorScreenState extends State<EditorScreen> {
   void _onScaleStart(ScaleStartDetails details) {
     if (c.croppingLayer) {
       _cropStart = details.localFocalPoint;
+      _cropLast = details.localFocalPoint;
       c.cropPreview = Rect.fromPoints(details.localFocalPoint, details.localFocalPoint);
       c.refresh();
       return;
@@ -400,6 +402,7 @@ class _EditorScreenState extends State<EditorScreen> {
       return;
     }
     if (c.croppingLayer && _cropStart != null) {
+      _cropLast = details.localFocalPoint;
       c.cropPreview = Rect.fromPoints(_cropStart!, details.localFocalPoint);
       c.refresh();
       return;
@@ -480,9 +483,12 @@ class _EditorScreenState extends State<EditorScreen> {
       final Rect? preview = c.cropPreview;
       final Offset? start = _cropStart;
       _cropStart = null;
-      if (layer != null && preview != null && start != null && preview.width > 8 && preview.height > 8) {
+      final Offset? finish = _cropLast ?? start;
+      _cropLast = null;
+      if (layer != null && preview != null && start != null && finish != null &&
+          preview.width > 8 && preview.height > 8) {
         final List<double> a = _toLayerUv(layer, start);
-        final List<double> b = _toLayerUv(layer, details.localFocalPoint);
+        final List<double> b = _toLayerUv(layer, finish);
         c.applyImageCrop(layer, a[0], a[1], b[0], b[1]);
       }
       c.cropPreview = null;
