@@ -767,8 +767,10 @@ class MaskSheet extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(top: 4, bottom: 8),
           child: Text(
-            'Paint on the photo. Adjustments then apply only where you painted — '
-            'everything outside the mask keeps the original look.',
+            'Paint on the photo (you will see a red wash). Your adjustments then '
+            'apply only where you painted, and everything outside the mask keeps '
+            'the original look — so move an Exposure or Saturation slider after '
+            'painting to see the effect.',
             style: TextStyle(fontSize: 11.5, color: Color(0xFF8A8A94), height: 1.5),
           ),
         ),

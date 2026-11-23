@@ -49,6 +49,13 @@ class _EditorScreenState extends State<EditorScreen> {
   Offset _xformStartLocal = Offset.zero;
   Offset? _cropStart;
   Offset? _cropLast;
+  bool _overBin = false;
+
+  Rect get _binRect => Rect.fromCenter(
+        center: Offset(c.viewport.width / 2, c.viewport.height - 18 - 24),
+        width: 84,
+        height: 84,
+      );
   DocPoint? _dragLayerStart;
   Layer? _dragLayer;
   Offset _startFocal = Offset.zero;
@@ -253,6 +260,7 @@ class _EditorScreenState extends State<EditorScreen> {
           children: <Widget>[
             Positioned.fill(
               child: GestureDetector(
+                onTapUp: _onTapUp,
                 onScaleStart: _onScaleStart,
                 onScaleUpdate: _onScaleUpdate,
                 onScaleEnd: _onScaleEnd,
@@ -279,11 +287,14 @@ class _EditorScreenState extends State<EditorScreen> {
                       c.deleteSelectedLayer();
                       _toast('Layer deleted');
                     },
-                    child: Container(
-                      width: 48,
-                      height: 48,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      width: _overBin ? 64 : 48,
+                      height: _overBin ? 64 : 48,
                       decoration: BoxDecoration(
-                        color: const Color(0xE62A1218),
+                        color: _overBin
+                            ? const Color(0xFFE5374B)
+                            : const Color(0xE62A1218),
                         shape: BoxShape.circle,
                         border: Border.all(color: const Color(0xFFFF6B6B), width: 1.5),
                         boxShadow: <BoxShadow>[
@@ -332,6 +343,33 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  void _pickColourAt(Offset local) {
+    c.sampleAt(c.screenToDoc(local)).then((ui.Color? picked) {
+      if (picked == null) {
+        c.cancelPicker();
+        _toast('Could not read that pixel');
+        return;
+      }
+      c.applyPickedColor(picked);
+      final String hex =
+          picked.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
+      _toast('Picked #$hex');
+    });
+  }
+
+  void _onTapUp(TapUpDetails details) {
+    if (c.pickingColor) {
+      _pickColourAt(details.localPosition);
+      return;
+    }
+    if (c.croppingLayer) return;
+    final Layer? hit = _hitLayer(details.localPosition);
+    if (hit != null && hit.id != c.selectedLayerId) {
+      c.selectLayer(hit.id);
+      c.refresh();
+    }
+  }
+
   void _onScaleStart(ScaleStartDetails details) {
     if (c.croppingLayer) {
       _cropStart = details.localFocalPoint;
@@ -341,14 +379,7 @@ class _EditorScreenState extends State<EditorScreen> {
       return;
     }
     if (c.pickingColor) {
-      c.sampleAt(c.screenToDoc(details.localFocalPoint)).then((ui.Color? picked) {
-        if (picked != null) {
-          c.applyPickedColor(picked);
-          _toast('Picked #${picked.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}');
-        } else {
-          c.cancelPicker();
-        }
-      });
+      _pickColourAt(details.localFocalPoint);
       return;
     }
     _startZoom = c.zoom;
@@ -418,6 +449,7 @@ class _EditorScreenState extends State<EditorScreen> {
       _dragLayer!.y = clampDouble(
           _dragLayer!.y + (now.dy - _dragLayerStart!.dy) / c.docH, -0.5, 1.5);
       _dragLayerStart = now;
+      _overBin = _binRect.contains(details.localFocalPoint);
       c.refresh();
       return;
     }
@@ -499,6 +531,11 @@ class _EditorScreenState extends State<EditorScreen> {
     _xformBase = null;
     if (c.tool == 'retouch') c.endStroke();
     if (c.tool == 'mask') c.endMaskStroke();
+    if (_overBin && _dragLayer != null) {
+      c.deleteSelectedLayer();
+      _toast('Layer deleted');
+    }
+    _overBin = false;
     _dragLayer = null;
     _dragLayerStart = null;
   }
@@ -1048,71 +1085,104 @@ class _CanvasPainter extends CustomPainter {
       canvas.restore();
     }
 
+    // the stroke being painted right now
+    if (c.tool == 'mask' && c.maskStrokePoints.isNotEmpty) {
+      final double s = c.viewScale;
+      final Offset origin = c.docToScreen(0, 0);
+      final double radius = (c.maskSize / 2) * s;
+      final Paint brush = Paint()
+        ..color = c.maskErase ? const Color(0x77FFFFFF) : const Color(0x99FF3B6B);
+      for (final DocPoint pt in c.maskStrokePoints) {
+        canvas.drawCircle(
+          Offset(origin.dx + pt.dx * s, origin.dy + pt.dy * s),
+          radius,
+          brush,
+        );
+      }
+    }
+
+    // live mask preview while the Mask tool is open
+    if (c.tool == 'mask' && c.project.mask != null) {
+      final ui.Image mask = c.project.mask!;
+      canvas.drawImageRect(
+        mask,
+        Rect.fromLTWH(0, 0, mask.width.toDouble(), mask.height.toDouble()),
+        dst,
+        Paint()
+          ..colorFilter = ui.ColorFilter.mode(
+            const Color(0x66FF3B6B),
+            ui.BlendMode.srcIn,
+          ),
+      );
+    }
+
     if (c.croppingLayer) {
       final Layer? layer = c.selectedLayer;
-      if (layer != null) {
+      Rect? frame = c.cropPreview;
+
+      // nothing dragged yet: frame the whole layer so the crop is always visible
+      if (frame == null && layer != null) {
         final double s = c.viewScale;
         final Offset origin = c.docToScreen(0, 0);
-        canvas.save();
-        canvas.translate(origin.dx + layer.x * c.docW * s,
-            origin.dy + layer.y * c.docH * s);
-        canvas.rotate(layer.rotation * math.pi / 180.0);
-        final Rect box = Rect.fromCenter(
-          center: Offset.zero,
-          width: layer.w * c.docW * s,
-          height: layer.h * c.docH * s,
-        );
-        canvas.drawRect(
-          box,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5
-            ..color = const Color(0xCCFFFFFF),
-        );
-        canvas.restore();
+        final double cx = origin.dx + layer.x * c.docW * s;
+        final double cy = origin.dy + layer.y * c.docH * s;
+        final double hw = layer.w * c.docW * s / 2;
+        final double hh = layer.h * c.docH * s / 2;
+        final double a = layer.rotation * math.pi / 180.0;
+        double minX = double.infinity, minY = double.infinity;
+        double maxX = -double.infinity, maxY = -double.infinity;
+        for (final List<double> corner in <List<double>>[
+          <double>[-hw, -hh], <double>[hw, -hh], <double>[hw, hh], <double>[-hw, hh]
+        ]) {
+          final double px = cx + corner[0] * math.cos(a) - corner[1] * math.sin(a);
+          final double py = cy + corner[0] * math.sin(a) + corner[1] * math.cos(a);
+          minX = math.min(minX, px);
+          minY = math.min(minY, py);
+          maxX = math.max(maxX, px);
+          maxY = math.max(maxY, py);
+        }
+        frame = Rect.fromLTRB(minX, minY, maxX, maxY);
       }
-      final Rect? pv = c.cropPreview;
-      if (pv != null) {
+
+      if (frame != null) {
         final Path full = Path()..addRect(Offset.zero & size);
-        final Path hole = Path()..addRect(pv);
+        final Path hole = Path()..addRect(frame);
         canvas.drawPath(
           Path.combine(PathOperation.difference, full, hole),
           Paint()..color = const Color(0x99000000),
         );
-        // dark halo first, then a crisp white frame on top
         canvas.drawRect(
-          pv.inflate(1.5),
+          frame.inflate(1.5),
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 4
             ..color = const Color(0x99000000),
         );
         canvas.drawRect(
-          pv,
+          frame,
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2.5
             ..color = const Color(0xFFFFFFFF),
         );
-        // third-lines inside the selection, like a camera crop grid
         final Paint grid = Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1
           ..color = const Color(0x66FFFFFF);
         for (int i = 1; i < 3; i++) {
           canvas.drawLine(
-            Offset(pv.left + pv.width * i / 3, pv.top),
-            Offset(pv.left + pv.width * i / 3, pv.bottom),
+            Offset(frame.left + frame.width * i / 3, frame.top),
+            Offset(frame.left + frame.width * i / 3, frame.bottom),
             grid,
           );
           canvas.drawLine(
-            Offset(pv.left, pv.top + pv.height * i / 3),
-            Offset(pv.right, pv.top + pv.height * i / 3),
+            Offset(frame.left, frame.top + frame.height * i / 3),
+            Offset(frame.right, frame.top + frame.height * i / 3),
             grid,
           );
         }
         for (final Offset corner in <Offset>[
-          pv.topLeft, pv.topRight, pv.bottomRight, pv.bottomLeft
+          frame.topLeft, frame.topRight, frame.bottomRight, frame.bottomLeft
         ]) {
           canvas.drawCircle(corner, 7, Paint()..color = const Color(0xFFFFFFFF));
           canvas.drawCircle(

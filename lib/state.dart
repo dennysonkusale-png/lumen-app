@@ -399,6 +399,8 @@ class EditorController extends ChangeNotifier {
       ..add(point);
   }
 
+  List<DocPoint> get maskStrokePoints => _maskStroke;
+
   void extendMaskStroke(DocPoint point) {
     if (!_masking) return;
     final DocPoint last = _maskStroke.last;
@@ -406,6 +408,7 @@ class EditorController extends ChangeNotifier {
     final double dy = point.dy - last.dy;
     if (dx * dx + dy * dy < 1) return;
     _maskStroke.add(point);
+    notifyListeners();
   }
 
   Future<void> endMaskStroke() async {
