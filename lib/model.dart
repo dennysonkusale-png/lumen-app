@@ -512,13 +512,13 @@ const List<TemplateDef> kTemplates = <TemplateDef>[
 
 
 /// Normalised cell rectangles for the built-in collage layouts.
-List<Rect> gridCells(int cols, int rows, {double gutter = 0.012}) {
-  final List<Rect> cells = <Rect>[];
+List<ui.Rect> gridCells(int cols, int rows, {double gutter = 0.012}) {
+  final List<ui.Rect> cells = <Rect>[];
   final double cw = (1 - gutter * (cols + 1)) / cols;
   final double ch = (1 - gutter * (rows + 1)) / rows;
   for (int r = 0; r < rows; r++) {
     for (int c = 0; c < cols; c++) {
-      cells.add(Rect.fromLTWH(
+      cells.add(ui.Rect.fromLTWH(
         gutter + c * (cw + gutter),
         gutter + r * (ch + gutter),
         cw,
@@ -529,15 +529,15 @@ List<Rect> gridCells(int cols, int rows, {double gutter = 0.012}) {
   return cells;
 }
 
-List<Rect> featureCells({double gutter = 0.012}) {
+List<ui.Rect> featureCells({double gutter = 0.012}) {
   final double w = 1 - gutter * 2;
   final double topH = (1 - gutter * 3) * 0.62;
   final double botH = (1 - gutter * 3) - topH;
   final double halfW = (w - gutter) / 2;
   return <Rect>[
-    Rect.fromLTWH(gutter, gutter, w, topH),
-    Rect.fromLTWH(gutter, gutter * 2 + topH, halfW, botH),
-    Rect.fromLTWH(gutter * 2 + halfW, gutter * 2 + topH, halfW, botH),
+    ui.Rect.fromLTWH(gutter, gutter, w, topH),
+    ui.Rect.fromLTWH(gutter, gutter * 2 + topH, halfW, botH),
+    ui.Rect.fromLTWH(gutter * 2 + halfW, gutter * 2 + topH, halfW, botH),
   ];
 }
 
@@ -545,7 +545,7 @@ class CollageLayout {
   final String name;
   final String hint;
   final int count;
-  final List<Rect> cells;
+  final List<ui.Rect> cells;
   const CollageLayout(this.name, this.hint, this.count, this.cells);
 }
 
