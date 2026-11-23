@@ -682,7 +682,7 @@ class EditorController extends ChangeNotifier {
     if (images.isEmpty) return;
 
     for (int i = 0; i < layout.cells.length && i < images.length; i++) {
-      final Rect cell = layout.cells[i];
+      final ui.Rect cell = layout.cells[i];
       final ui.Image image = images[i];
       final double cellW = cell.width * size;
       final double cellH = cell.height * size;

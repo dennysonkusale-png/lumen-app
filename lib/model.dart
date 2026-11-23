@@ -513,7 +513,7 @@ const List<TemplateDef> kTemplates = <TemplateDef>[
 
 /// Normalised cell rectangles for the built-in collage layouts.
 List<ui.Rect> gridCells(int cols, int rows, {double gutter = 0.012}) {
-  final List<ui.Rect> cells = <Rect>[];
+  final List<ui.Rect> cells = <ui.Rect>[];
   final double cw = (1 - gutter * (cols + 1)) / cols;
   final double ch = (1 - gutter * (rows + 1)) / rows;
   for (int r = 0; r < rows; r++) {
@@ -534,7 +534,7 @@ List<ui.Rect> featureCells({double gutter = 0.012}) {
   final double topH = (1 - gutter * 3) * 0.62;
   final double botH = (1 - gutter * 3) - topH;
   final double halfW = (w - gutter) / 2;
-  return <Rect>[
+  return <ui.Rect>[
     ui.Rect.fromLTWH(gutter, gutter, w, topH),
     ui.Rect.fromLTWH(gutter, gutter * 2 + topH, halfW, botH),
     ui.Rect.fromLTWH(gutter * 2 + halfW, gutter * 2 + topH, halfW, botH),
