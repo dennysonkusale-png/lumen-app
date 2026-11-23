@@ -30,12 +30,29 @@ jobs:
 
       - name: Generate the Android host project
         # flutter create writes android/ (and ios/) around the existing lib/.
-        # It also rewrites pubspec.yaml, so the original is restored afterwards.
+        # It also rewrites pubspec.yaml and drops in its own widget test, so
+        # the pubspec is restored and the sample test removed afterwards.
         run: |
           cp pubspec.yaml pubspec.original.yaml
           flutter create --org com.lumen --project-name lumen --platforms=android .
           cp pubspec.original.yaml pubspec.yaml
-          rm pubspec.original.yaml
+          rm -f pubspec.original.yaml
+          rm -f test/widget_test.dart
+
+      - name: Raise compileSdk for current plugins
+        # image_picker / share_plus pull in AndroidX libraries that require
+        # compileSdk 34+. Flutter's template still generates 33.
+        run: |
+          set -e
+          for f in android/app/build.gradle android/app/build.gradle.kts; do
+            [ -f "$f" ] || continue
+            sed -i -E 's/compileSdk[[:space:]]*=[[:space:]]*flutter\.compileSdkVersion/compileSdk = 36/' "$f"
+            sed -i -E 's/compileSdkVersion[[:space:]]+flutter\.compileSdkVersion/compileSdkVersion 36/' "$f"
+            sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*flutter\.minSdkVersion/minSdk = 23/' "$f"
+            sed -i -E 's/minSdkVersion[[:space:]]+flutter\.minSdkVersion/minSdkVersion 23/' "$f"
+            echo "--- $f"
+            grep -nE "compileSdk|minSdk" "$f" || true
+          done
 
       - name: Install packages
         run: flutter pub get
@@ -49,7 +66,15 @@ jobs:
           exit 0
 
       - name: Build debug APK
-        run: flutter build apk --debug --verbose 2>&1 | tail -120
+        # No pipe here: a piped command reports the exit status of the pipe's
+        # last stage, which would hide a failed build.
+        run: flutter build apk --debug
+
+      - name: Show what was produced
+        if: always()
+        run: |
+          find build -name "*.apk" -o -name "*.aab" 2>/dev/null | head -20
+          ls -la build/app/outputs/flutter-apk/ 2>/dev/null || echo "no apk directory"
 
       - name: Upload analyzer report
         if: always()
