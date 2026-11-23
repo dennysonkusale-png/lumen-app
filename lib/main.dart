@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -163,78 +164,295 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Widget _buildHome() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          const Spacer(flex: 3),
-          Container(
-            width: 56,
-            height: 56,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: <Color>[Color(0xFF8B7BFF), Color(0xFF5B49D6)],
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: <BoxShadow>[
-                BoxShadow(
-                  color: kAccent.withOpacity(0.45),
-                  blurRadius: 26,
-                  offset: const Offset(0, 8),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: MediaQuery.of(context).size.height - 80),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const SizedBox(height: 56),
+            Container(
+              width: 54,
+              height: 54,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: <Color>[Color(0xFF8B7BFF), Color(0xFF5B49D6)],
                 ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: <BoxShadow>[
+                  BoxShadow(
+                    color: kAccent.withOpacity(0.40),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.tonality, size: 27, color: Colors.white),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Lumen',
+              style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: -0.6),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Start something, or open a photo you already have.',
+              style: TextStyle(fontSize: 12.5, color: Color(0xFF8A8A94), height: 1.5),
+            ),
+            const SizedBox(height: 28),
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.96,
+              children: <Widget>[
+                _homeTile('Photo', Icons.photo_library_outlined,
+                    () => _pick(ImageSource.gallery)),
+                _homeTile('Camera', Icons.photo_camera_outlined,
+                    () => _pick(ImageSource.camera)),
+                _homeTile('Video', Icons.videocam_outlined, () {
+                  _toast('Video editing is not in this build yet');
+                }, muted: true),
+                _homeTile('Template', Icons.dashboard_customize_outlined, _openTemplates),
+                _homeTile('Collage', Icons.grid_view_outlined, _openCollage),
+                _homeTile('Drive', Icons.cloud_outlined, _pickFromFiles),
               ],
             ),
-            child: const Icon(Icons.tonality, size: 28, color: Colors.white),
-          ),
-          const SizedBox(height: 22),
-          const Text(
-            'Lumen',
-            style: TextStyle(
-              fontSize: 34,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.6,
+            const SizedBox(height: 22),
+            _homeButton(
+              label: 'Blank canvas',
+              icon: Icons.crop_square,
+              primary: false,
+              onTap: _openNewFileSheet,
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'A quiet place to edit photos. Everything happens on your phone.',
-            style: TextStyle(fontSize: 13, color: Color(0xFF8A8A94), height: 1.55),
-          ),
-          const Spacer(flex: 2),
-          _homeButton(
-            label: 'New file',
-            icon: Icons.add,
-            primary: true,
-            onTap: _openNewFileSheet,
-          ),
-          const SizedBox(height: 12),
-          _homeButton(
-            label: 'Open file',
-            icon: Icons.photo_library_outlined,
-            primary: false,
-            onTap: () => _pick(ImageSource.gallery),
-          ),
-          const SizedBox(height: 10),
-          _homeButton(
-            label: 'Take a photo',
-            icon: Icons.photo_camera_outlined,
-            primary: false,
-            onTap: () => _pick(ImageSource.camera),
-          ),
-          const Spacer(flex: 3),
-          const Text(
-            'JPEG · PNG · WebP · HEIC',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 10, color: Color(0xFF4E4E5C), letterSpacing: 0.6),
-          ),
-          const SizedBox(height: 14),
-        ],
+            const SizedBox(height: 28),
+            const Text(
+              'JPEG · PNG · WebP · HEIC · Drive, Dropbox and Downloads via system files',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 9.5, color: Color(0xFF4E4E5C), height: 1.5),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _homeTile(String label, IconData icon, VoidCallback onTap, {bool muted = false}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: muted ? const Color(0xFF14141A) : const Color(0xFF1A1A21),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF26262F)),
+        ),
+        child: Stack(
+          children: <Widget>[
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Icon(icon,
+                      size: 24,
+                      color: muted ? const Color(0xFF5C5C6B) : const Color(0xFFB9AEFF)),
+                  const SizedBox(height: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: muted ? const Color(0xFF5C5C6B) : const Color(0xFFEDEDF3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (muted)
+              Positioned(
+                top: 7,
+                right: 7,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF26262F),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text('SOON',
+                      style: TextStyle(
+                          fontSize: 7.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: Color(0xFF8A8A94))),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openTemplates() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kPanel,
+      builder: (BuildContext context) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const Text('Template',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text('A ready-made layout you can edit like any other document.',
+                  style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C))),
+              const SizedBox(height: 14),
+              for (final TemplateDef t in kTemplates)
+                GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    c.applyTemplate(t);
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1C1C24),
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(color: kBorder),
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: t.dark ? const Color(0xFF0E0E11) : Colors.white,
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: kBorder),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(t.name,
+                                  style: const TextStyle(
+                                      fontSize: 13, fontWeight: FontWeight.w600)),
+                              const SizedBox(height: 2),
+                              Text('${t.hint} · ${t.width}×${t.height}',
+                                  style: const TextStyle(
+                                      fontSize: 10.5, color: Color(0xFF7E7E8C))),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, size: 18, color: Color(0xFF5C5C6B)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _openCollage() {
+    const List<List<Object>> layouts = <List<Object>>[
+      <Object>['2 × 2', 2, 2],
+      <Object>['3 × 1', 3, 1],
+      <Object>['2 × 3', 2, 3],
+      <Object>['1 × 2', 1, 2],
+    ];
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kPanel,
+      builder: (BuildContext context) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const Text('Collage',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text('Pick a grid, then choose the photos to fill it.',
+                  style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C))),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  for (final List<Object> l in layouts)
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        _runCollage(l[1] as int, l[2] as int);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF20202A),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(l[0] as String,
+                            style: const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _runCollage(int cols, int rows) async {
+    try {
+      final List<XFile> files = await ImagePicker().pickMultiImage();
+      if (files.isEmpty) return;
+      final List<ui.Image> images = <ui.Image>[];
+      for (final XFile file in files.take(cols * rows)) {
+        final Uint8List bytes = await file.readAsBytes();
+        final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+        final ui.FrameInfo frame = await codec.getNextFrame();
+        images.add(frame.image);
+      }
+      await c.newCollage(cols, rows, images);
+      _toast('${images.length} photo${images.length == 1 ? '' : 's'} placed');
+    } catch (error) {
+      _toast('Could not build that collage');
+      debugPrint('collage failed: $error');
+    }
+  }
+
+  Future<void> _pickFromFiles() async {
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      final PlatformFile? file = result?.files.first;
+      final Uint8List? bytes = file?.bytes;
+      if (bytes == null) return;
+      await c.loadBytes(bytes, (file!.name).replaceAll(RegExp(r'\.[^.]+$'), ''));
+    } catch (error) {
+      _toast('Could not open that file');
+      debugPrint('file picker failed: $error');
+    }
   }
 
   Widget _homeButton({

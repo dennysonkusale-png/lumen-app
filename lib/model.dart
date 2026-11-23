@@ -469,3 +469,26 @@ const List<int> kSwatches = <int>[
   0xFFFFFFFF, 0xFF0E0E11, 0xFF6C5CE7, 0xFFFFB86B, 0xFFFF5C7C,
   0xFF3ED598, 0xFF4CC9F0, 0xFFF72585, 0xFFFFE066, 0xFFB9AEFF,
 ];
+
+
+/// ---------------------------------------------------------------------------
+/// Starter templates for the home screen
+/// ---------------------------------------------------------------------------
+
+class TemplateDef {
+  final String id;
+  final String name;
+  final String hint;
+  final int width;
+  final int height;
+  final bool dark;
+  const TemplateDef(this.id, this.name, this.hint, this.width, this.height,
+      {this.dark = false});
+}
+
+const List<TemplateDef> kTemplates = <TemplateDef>[
+  TemplateDef('quote', 'Quote card', 'Serif line on white', 1080, 1350),
+  TemplateDef('sale', 'Sale badge', 'Bold offer layout', 1080, 1080),
+  TemplateDef('poster', 'Dark poster', 'Big title on black', 1080, 1350, dark: true),
+  TemplateDef('caption', 'Caption bar', 'Photo with a bar', 1080, 1350),
+];

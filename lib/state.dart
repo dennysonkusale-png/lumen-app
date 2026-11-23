@@ -594,6 +594,129 @@ class EditorController extends ChangeNotifier {
   }
 
   /* --------------------------------------------------------------------- */
+  /* templates and collages                                                 */
+  /* --------------------------------------------------------------------- */
+
+  Future<void> applyTemplate(TemplateDef def) async {
+    await newDocument(def.width, def.height, white: !def.dark);
+    final String id = DateTime.now().microsecondsSinceEpoch.toString();
+    Layer text(String value, double y, double size, int colour,
+        {String font = 'Georgia', int weight = 700, double h = 0.12}) {
+      return Layer(
+        id: '$id-${y.toStringAsFixed(2)}',
+        type: LayerType.text,
+        text: value,
+        font: font,
+        weight: weight,
+        size: size,
+        color: colour,
+        strokeWidth: 0,
+        shadow: def.dark,
+        x: 0.5,
+        y: y,
+        w: 0.84,
+        h: h,
+      );
+    }
+
+    switch (def.id) {
+      case 'sale':
+        project.layers.addAll(<Layer>[
+          Layer(
+            id: '$id-c',
+            type: LayerType.shape,
+            shape: 'ellipse',
+            color: 0xFF6C5CE7,
+            x: 0.5,
+            y: 0.5,
+            w: 0.62,
+            h: 0.62,
+          ),
+          text('SALE', 0.42, 0.15, 0xFFFFFFFF, font: 'Impact', weight: 900),
+          text('UP TO 50% OFF', 0.56, 0.045, 0xFFFFE066, font: 'Inter', weight: 600),
+        ]);
+        break;
+      case 'poster':
+        project.layers.addAll(<Layer>[
+          text('MAKE\nIT LOUD', 0.30, 0.13, 0xFFFFFFFF, weight: 900),
+          text('A LUMEN POSTER', 0.45, 0.028, 0xFFFFB86B, font: 'Inter', weight: 600),
+          Layer(
+            id: '$id-l',
+            type: LayerType.shape,
+            shape: 'line',
+            color: 0xFFFFB86B,
+            x: 0.5,
+            y: 0.52,
+            w: 0.26,
+            h: 0.002,
+          ),
+        ]);
+        break;
+      case 'caption':
+        project.layers.addAll(<Layer>[
+          text('Your headline here', 0.80, 0.062, 0xFFFFFFFF, font: 'Inter', weight: 700),
+          text('Add your photo as a layer, then send it behind this text',
+              0.875, 0.026, 0xFFB9AEFF, font: 'Inter', weight: 500),
+        ]);
+        break;
+      default:
+        project.layers.addAll(<Layer>[
+          text('“Add your own\nwords here”', 0.40, 0.082, 0xFF0E0E11, h: 0.2),
+          text('— YOUR NAME', 0.60, 0.026, 0xFF6C5CE7, font: 'Inter', weight: 600),
+        ]);
+        break;
+    }
+    _revision++;
+    _touch();
+  }
+
+  /// Builds a grid collage from [images] on a square canvas.
+  Future<void> newCollage(int cols, int rows, List<ui.Image> images) async {
+    const int size = 1080;
+    const double gutter = 18;
+    await newDocument(size, size, white: true);
+    if (images.isEmpty) return;
+
+    final double cellW = (size - gutter * (cols + 1)) / cols;
+    final double cellH = (size - gutter * (rows + 1)) / rows;
+    final double cellAspect = cellW / cellH;
+
+    for (int i = 0; i < cols * rows && i < images.length; i++) {
+      final ui.Image image = images[i];
+      final int col = i % cols;
+      final int row = i ~/ cols;
+      final double left = gutter + col * (cellW + gutter);
+      final double top = gutter + row * (cellH + gutter);
+
+      double srcW = 1, srcH = 1, srcX = 0, srcY = 0;
+      final double imgAspect = image.width / image.height;
+      if (imgAspect > cellAspect) {
+        srcW = cellAspect / imgAspect;
+        srcX = (1 - srcW) / 2;
+      } else {
+        srcH = imgAspect / cellAspect;
+        srcY = (1 - srcH) / 2;
+      }
+
+      project.layers.add(Layer(
+        id: 'cell-$i-${DateTime.now().microsecondsSinceEpoch}',
+        type: LayerType.image,
+        pixels: image,
+        srcX: srcX,
+        srcY: srcY,
+        srcW: srcW,
+        srcH: srcH,
+        x: (left + cellW / 2) / size,
+        y: (top + cellH / 2) / size,
+        w: cellW / size,
+        h: cellH / size,
+      ));
+    }
+    _revision++;
+    _touch();
+  }
+
+  /* --------------------------------------------------------------------- */
   /* extra photo layers                                                     */
   /* --------------------------------------------------------------------- */
 
