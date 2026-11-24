@@ -60,9 +60,9 @@ class _EditorScreenState extends State<EditorScreen> {
   Offset _panStartLocal = Offset.zero;
 
   Rect get _binRect => Rect.fromCenter(
-        center: Offset(c.viewport.width / 2, c.viewport.height - 18 - 24),
-        width: 84,
-        height: 84,
+        center: Offset(c.viewport.width / 2 + 80, c.viewport.height - 14 - 31),
+        width: 88,
+        height: 88,
       );
   DocPoint? _dragLayerStart;
   Layer? _dragLayer;
@@ -630,6 +630,75 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  Widget _layerActionBar() {
+    final Layer? layer = c.selectedLayer;
+    if (layer == null) return const SizedBox.shrink();
+
+    Widget item(IconData icon, String label, VoidCallback onTap) {
+      return GestureDetector(
+        onTap: onTap,
+        child: SizedBox(
+          width: 80,
+          height: 62,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(icon, size: 21, color: const Color(0xFFE0E0E8)),
+              const SizedBox(height: 5),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFFE0E0E8),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      width: 240,
+      height: 62,
+      decoration: BoxDecoration(
+        color: _overBin ? const Color(0xFF2F6BFF) : const Color(0xE61C1C24),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: _overBin ? const Color(0xFF7DA6FF) : const Color(0xFF2E2E3A),
+          width: 1.2,
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: const Color(0x88000000),
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          item(
+            layer.type == LayerType.text ? Icons.short_text : Icons.tune,
+            'Edit',
+            () => c.setTool(layer.type == LayerType.text ? 'text' : 'sticker'),
+          ),
+          item(Icons.copy_all_outlined, 'Duplicate', () {
+            c.duplicateLayer(layer);
+            _toast('Duplicated');
+          }),
+          item(Icons.delete_outline, 'Delete', () {
+            c.deleteSelectedLayer();
+            _toast('Layer deleted');
+          }),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTopBar() {
     Widget icon(IconData data, VoidCallback? onTap, {Color? color}) {
       return SizedBox(
@@ -746,50 +815,12 @@ class _EditorScreenState extends State<EditorScreen> {
                 ),
               ),
             ),
-            if (c.selectedLayer != null && !c.croppingLayer && !(c.selectedLayer!.frame))
+            if (c.selectedLayer != null && !c.croppingLayer && !c.cropping)
               Positioned(
                 left: 0,
                 right: 0,
-                bottom: 18,
-                child: Center(
-                  child: GestureDetector(
-                    onTap: () {
-                      c.deleteSelectedLayer();
-                      _toast('Layer deleted');
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 120),
-                      width: _overBin ? 62 : 48,
-                      height: _overBin ? 62 : 48,
-                      decoration: BoxDecoration(
-                        color: _overBin
-                            ? const Color(0xFF2F6BFF)
-                            : const Color(0xFF2A2A33),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _overBin
-                              ? const Color(0xFF7DA6FF)
-                              : const Color(0xFF4A4A58),
-                          width: 1.5,
-                        ),
-                        boxShadow: <BoxShadow>[
-                          BoxShadow(
-                            color: const Color(0x66000000),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.delete_outline,
-                        color: _overBin
-                            ? const Color(0xFFFFFFFF)
-                            : const Color(0xFFB0B0BE),
-                        size: 22,
-                      ),
-                    ),
-                  ),
-                ),
+                bottom: 14,
+                child: Center(child: _layerActionBar()),
               ),
             if (c.croppingLayer)
               Positioned(
@@ -1727,7 +1758,7 @@ class _CanvasPainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5
-          ..color = kAccent,
+          ..color = const Color(0xE6FFFFFF),
       );
       // rotate handle
       final Offset rotHandle = Offset(0, -box.height / 2 - 30);
@@ -1736,30 +1767,30 @@ class _CanvasPainter extends CustomPainter {
         rotHandle,
         Paint()
           ..strokeWidth = 1.5
-          ..color = kAccent,
+          ..color = const Color(0xB3FFFFFF),
       );
-      canvas.drawCircle(rotHandle, 8, Paint()..color = kText);
+      canvas.drawCircle(rotHandle, 9, Paint()..color = const Color(0xFF3ED598));
       canvas.drawCircle(
         rotHandle,
-        8,
+        9,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5
-          ..color = kAccent,
+          ..color = const Color(0xFF1E7A55),
       );
       // corner handles
       final List<Offset> corners = <Offset>[
         box.topLeft, box.topRight, box.bottomRight, box.bottomLeft
       ];
       for (final Offset corner in corners) {
-        final Rect handle = Rect.fromCenter(center: corner, width: 16, height: 16);
-        canvas.drawRect(handle, Paint()..color = kText);
-        canvas.drawRect(
-          handle,
+        canvas.drawCircle(corner, 10, Paint()..color = const Color(0xFFFFFFFF));
+        canvas.drawCircle(
+          corner,
+          10,
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.5
-            ..color = kAccent,
+            ..color = const Color(0x66000000),
         );
       }
       canvas.restore();
