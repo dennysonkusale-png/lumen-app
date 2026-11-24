@@ -1487,6 +1487,16 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  String _exportDims(double longEdge) {
+    final double dw = c.docW;
+    final double dh = c.docH;
+    final double scale = longEdge <= 0 ? 1 : longEdge / math.max(dw, dh);
+    final int w = (dw * scale).round();
+    final int h = (dh * scale).round();
+    final double mp = w * h / 1000000;
+    return '$w × $h · ${mp.toStringAsFixed(1)} MP';
+  }
+
   void _openExport() {
     bool png = false;
     int quality = 92;
@@ -1537,21 +1547,46 @@ class _EditorScreenState extends State<EditorScreen> {
                   const SizedBox(height: 10),
                   Row(
                     children: <Widget>[
-                      const Expanded(child: Text('Size', style: TextStyle(fontSize: 12.5))),
-                      PillButton(
-                        label: 'Original',
-                        primary: longEdge == 0,
-                        onTap: () => setSheet(() => longEdge = 0),
-                      ),
-                      const SizedBox(width: 8),
-                      PillButton(
-                        label: '2048 px',
-                        primary: longEdge == 2048,
-                        onTap: () => setSheet(() => longEdge = 2048),
+                      const Expanded(
+                          child: Text('Size', style: TextStyle(fontSize: 12.5))),
+                      Text(
+                        _exportDims(longEdge),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF8A8A94)),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: <Widget>[
+                      for (final int v in <int>[0, 2048, 4000, 6000, 8000])
+                        PillButton(
+                          label: v == 0 ? 'Original' : '${v}px',
+                          primary: longEdge.round() == v,
+                          onTap: () => setSheet(() => longEdge = v.toDouble()),
+                        ),
+                    ],
+                  ),
+                  if (longEdge > 0)
+                    SliderRow(
+                      label: 'Long edge',
+                      value: longEdge,
+                      min: 512,
+                      max: 8000,
+                      suffix: '${longEdge.round()}',
+                      onChanged: (double v) =>
+                          setSheet(() => longEdge = (v / 64).round() * 64.0),
+                    ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2, bottom: 4),
+                    child: Text(
+                      'Upscaling beyond the original size softens fine detail. '
+                      'Very large sizes take a few seconds and need free memory.',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF71717E), height: 1.5),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
                   SliderRow(
                     label: 'Quality',
                     value: quality.toDouble(),
@@ -1598,7 +1633,7 @@ class _EditorScreenState extends State<EditorScreen> {
     final Uint8List? bytes =
         await c.encodeExport(png: png, quality: quality, longEdge: longEdge);
     if (bytes == null) {
-      _toast('Export failed');
+      _toast(c.exportError ?? 'Export failed');
       return;
     }
     try {

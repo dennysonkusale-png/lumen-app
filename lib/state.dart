@@ -960,6 +960,8 @@ class EditorController extends ChangeNotifier {
   /* export                                                                 */
   /* --------------------------------------------------------------------- */
 
+  String? exportError;
+
   Future<Uint8List?> encodeExport({
     required bool png,
     required int quality,
@@ -972,6 +974,13 @@ class EditorController extends ChangeNotifier {
     try {
       final double base = math.max(docW, docH);
       final double scale = longEdge <= 0 ? 1.0 : longEdge / base;
+      final int outW = (docW * scale).round();
+      final int outH = (docH * scale).round();
+      if (outW * outH > 80 * 1000 * 1000) {
+        exportError =
+            'That would be ${(outW * outH / 1000000).round()} MP — too large for this device';
+        return null;
+      }
       final ui.Image photoImg = await buildPhoto(project, scale);
       final int w = photoImg.width;
       final int h = photoImg.height;
@@ -1004,6 +1013,7 @@ class EditorController extends ChangeNotifier {
       return bytes;
     } catch (error) {
       debugPrint('export failed: $error');
+      exportError = 'Export failed: $error';
       return null;
     } finally {
       busy = false;
