@@ -1808,22 +1808,6 @@ class _CanvasPainter extends CustomPainter {
       canvas.restore();
     }
 
-    // the stroke being painted right now
-    if (c.tool == 'mask' && c.maskStrokePoints.isNotEmpty) {
-      final double s = c.viewScale;
-      final Offset origin = c.docToScreen(0, 0);
-      final double radius = (c.maskSize / 2) * s;
-      final Paint brush = Paint()
-        ..color = c.maskErase ? const Color(0x77FFFFFF) : const Color(0x99FF3B6B);
-      for (final DocPoint pt in c.maskStrokePoints) {
-        canvas.drawCircle(
-          Offset(origin.dx + pt.dx * s, origin.dy + pt.dy * s),
-          radius,
-          brush,
-        );
-      }
-    }
-
     // live mask preview while the Mask tool is open
     if (c.tool == 'mask' && c.showMaskWash && c.project.mask != null) {
       final ui.Image mask = c.project.mask!;
