@@ -608,8 +608,8 @@ class EditorController extends ChangeNotifier {
     final double dx = cxLocal * math.cos(a) - cyLocal * math.sin(a);
     final double dy = cxLocal * math.sin(a) + cyLocal * math.cos(a);
 
-    layer.x = clampDouble(layer.x + dx / docW, -0.5, 1.5);
-    layer.y = clampDouble(layer.y + dy / docH, -0.5, 1.5);
+    layer.x = clampDouble(layer.x + dx / docW, 0, 1);
+    layer.y = clampDouble(layer.y + dy / docH, 0, 1);
     layer.w = math.max(0.02, layer.w * (x1 - x0));
     layer.h = math.max(0.02, layer.h * (y1 - y0));
     layer.srcX = clampDouble(layer.srcX + x0 * layer.srcW, 0, 1);

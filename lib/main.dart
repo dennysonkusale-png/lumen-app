@@ -759,14 +759,19 @@ class _EditorScreenState extends State<EditorScreen> {
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 120),
-                      width: _overBin ? 64 : 48,
-                      height: _overBin ? 64 : 48,
+                      width: _overBin ? 62 : 48,
+                      height: _overBin ? 62 : 48,
                       decoration: BoxDecoration(
                         color: _overBin
-                            ? const Color(0xFFE5374B)
-                            : const Color(0xE62A1218),
+                            ? const Color(0xFF2F6BFF)
+                            : const Color(0xFF2A2A33),
                         shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFFFF6B6B), width: 1.5),
+                        border: Border.all(
+                          color: _overBin
+                              ? const Color(0xFF7DA6FF)
+                              : const Color(0xFF4A4A58),
+                          width: 1.5,
+                        ),
                         boxShadow: <BoxShadow>[
                           BoxShadow(
                             color: const Color(0x66000000),
@@ -775,8 +780,13 @@ class _EditorScreenState extends State<EditorScreen> {
                           ),
                         ],
                       ),
-                      child: const Icon(Icons.delete_outline,
-                          color: Color(0xFFFF8A8A), size: 22),
+                      child: Icon(
+                        Icons.delete_outline,
+                        color: _overBin
+                            ? const Color(0xFFFFFFFF)
+                            : const Color(0xFFB0B0BE),
+                        size: 22,
+                      ),
                     ),
                   ),
                 ),
@@ -1072,9 +1082,9 @@ class _EditorScreenState extends State<EditorScreen> {
     if (_dragLayer != null && _dragLayerStart != null) {
       final DocPoint now = c.screenToDoc(details.localFocalPoint);
       _dragLayer!.x = clampDouble(
-          _dragLayer!.x + (now.dx - _dragLayerStart!.dx) / c.docW, -0.5, 1.5);
+          _dragLayer!.x + (now.dx - _dragLayerStart!.dx) / c.docW, 0, 1);
       _dragLayer!.y = clampDouble(
-          _dragLayer!.y + (now.dy - _dragLayerStart!.dy) / c.docH, -0.5, 1.5);
+          _dragLayer!.y + (now.dy - _dragLayerStart!.dy) / c.docH, 0, 1);
       _dragLayerStart = now;
       _overBin = _binRect.contains(details.localFocalPoint);
       c.refresh();
@@ -1173,18 +1183,16 @@ class _EditorScreenState extends State<EditorScreen> {
     _dragLayerStart = null;
   }
 
-  /// Keeps the photo from being dragged off the viewport.
+  /// Keeps the photo inside the viewport: locked when it fits, edge-to-edge
+  /// when zoomed in — no slack, so it cannot drift outside the frame.
   void _clampPan() {
     final double s = c.viewScale;
     final double w = c.docW * s;
     final double h = c.docH * s;
-    const double slack = 28;
-    final double maxX = w <= c.viewport.width
-        ? slack
-        : math.max(slack, (w - c.viewport.width) / 2 + slack);
-    final double maxY = h <= c.viewport.height
-        ? slack
-        : math.max(slack, (h - c.viewport.height) / 2 + slack);
+    final double maxX =
+        w <= c.viewport.width ? 0 : (w - c.viewport.width) / 2;
+    final double maxY =
+        h <= c.viewport.height ? 0 : (h - c.viewport.height) / 2;
     c.panX = clampDouble(c.panX, -maxX, maxX);
     c.panY = clampDouble(c.panY, -maxY, maxY);
   }
