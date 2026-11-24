@@ -63,12 +63,23 @@ class AdjustSheet extends StatelessWidget {
           children: <Widget>[
             Expanded(
               child: PillButton(
-                label: 'Auto enhance',
+                label: 'Smart enhance',
                 primary: true,
-                onTap: () => c.autoAdjust('enhance'),
+                onTap: () => c.smartEnhance(),
               ),
             ),
             const SizedBox(width: 8),
+            Expanded(
+              child: PillButton(
+                label: 'Auto enhance',
+                onTap: () => c.autoAdjust('enhance'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: <Widget>[
             Expanded(
               child: PillButton(
                 label: 'Auto contrast',
@@ -80,6 +91,13 @@ class AdjustSheet extends StatelessWidget {
               child: PillButton(
                 label: 'Auto bright',
                 onTap: () => c.autoAdjust('brightness'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: PillButton(
+                label: c.project.customLut == null ? 'Levels off' : 'Undo smart',
+                onTap: c.clearSmartEnhance,
               ),
             ),
           ],

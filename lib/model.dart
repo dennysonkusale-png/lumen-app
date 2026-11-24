@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 /// ---------------------------------------------------------------------------
@@ -416,6 +417,7 @@ class Project {
   List<Layer> layers;
   ui.Image? mask;
   ui.Image? cutout;
+  List<Uint8List>? customLut;   // per-image tone LUT from Smart enhance
   bool maskEnabled;
   double backgroundBlur;
   String name;
@@ -432,6 +434,7 @@ class Project {
     List<Layer>? layers,
     this.mask,
     this.cutout,
+    this.customLut,
     this.maskEnabled = true,
     this.backgroundBlur = 0,
     this.name = 'Untitled',
@@ -455,6 +458,7 @@ class Project {
         layers: layers.map((Layer l) => l.copy()).toList(),
         mask: mask,
         cutout: cutout,
+        customLut: customLut,
         maskEnabled: maskEnabled,
         backgroundBlur: backgroundBlur,
         name: name,

@@ -301,6 +301,14 @@ Future<ui.Image> buildPhoto(Project project, double scale) async {
 
   final Uint8List pixels = await pixelsOf(base);
   _applyPixels(pixels, w, h, project.adjust, filterById(project.filterId), project.filterAmount);
+  final List<Uint8List>? lut = project.customLut;
+  if (lut != null) {
+    for (int i = 0; i < pixels.length; i += 4) {
+      pixels[i] = lut[0][pixels[i]];
+      pixels[i + 1] = lut[1][pixels[i + 1]];
+      pixels[i + 2] = lut[2][pixels[i + 2]];
+    }
+  }
   ui.Image photo = await imageFromPixels(pixels, w, h);
 
   if (project.adjust['clarity'] != 0 || project.adjust['sharpen'] > 0) {

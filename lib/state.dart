@@ -865,6 +865,99 @@ class EditorController extends ChangeNotifier {
     return label;
   }
 
+  /// A stronger, image-specific enhancement: per-channel histogram stretch
+  /// (auto levels), grey-world white balance and a gentle S-curve, baked into
+  /// a LUT for this photo. Algorithmic — not a neural network.
+  Future<String> smartEnhance() async {
+    if (project.source == null) return 'nothing to analyse';
+    busy = true;
+    busyLabel = 'Enhancing…';
+    notifyListeners();
+
+    final ui.Image base = await buildBase(project, 0.2);
+    final int w = base.width;
+    final int h = base.height;
+    final Uint8List px = await pixelsOf(base);
+    base.dispose();
+
+    final List<Int32List> hist = <Int32List>[
+      Int32List(256), Int32List(256), Int32List(256)
+    ];
+    int total = 0;
+    for (int i = 0; i < px.length; i += 4) {
+      hist[0][px[i]]++;
+      hist[1][px[i + 1]]++;
+      hist[2][px[i + 2]]++;
+      total++;
+    }
+    if (total == 0) {
+      busy = false;
+      notifyListeners();
+      return 'nothing to analyse';
+    }
+
+    // 1% / 99% percentiles per channel → auto levels
+    final List<double> lo = <double>[];
+    final List<double> hi = <double>[];
+    final List<double> means = <double>[];
+    for (int c = 0; c < 3; c++) {
+      final int lowCut = (total * 0.01).round();
+      final int highCut = (total * 0.99).round();
+      int running = 0;
+      double l = 0, h2 = 255, sum = 0;
+      for (int v = 0; v < 256; v++) {
+        running += hist[c][v];
+        sum += hist[c][v] * v;
+        if (l == 0 && running >= lowCut) l = v.toDouble();
+        if (h2 == 255 && running >= highCut) h2 = v.toDouble();
+      }
+      lo.add(l);
+      hi.add(h2);
+      means.add(sum / total);
+    }
+
+    // grey-world white balance, applied at half strength to avoid tinting
+    final double meanAll = (means[0] + means[1] + means[2]) / 3;
+    final List<double> wb = <double>[
+      for (int c = 0; c < 3; c++)
+        means[c] < 1 ? 1.0 : 1 + ((meanAll / means[c]) - 1) * 0.5,
+    ];
+
+    final List<Uint8List> lut = <Uint8List>[];
+    for (int c = 0; c < 3; c++) {
+      final Uint8List channel = Uint8List(256);
+      final double span = math.max(8, hi[c] - lo[c]);
+      for (int i = 0; i < 256; i++) {
+        double x = (i - lo[c]) / span;
+        x = clampDouble(x, 0, 1);
+        x = x + (x - 0.5) * 0.10 * (1 - (2 * x - 1).abs()); // gentle S
+        x = math.pow(x, 1 / 1.04).toDouble();               // slight lift
+        x = clampDouble(x * wb[c], 0, 1);
+        channel[i] = (x * 255).round();
+      }
+      lut.add(channel);
+    }
+
+    pushHistory();
+    project.customLut = lut;
+    final Map<String, double> next = Map<String, double>.of(project.adjust.v);
+    next['vibrance'] = 18;
+    next['shadows'] = 12;
+    next['clarity'] = 10;
+    next['sharpen'] = 14;
+    project.adjust = Adjustments(next);
+    busy = false;
+    _touch();
+    return 'Smart enhance';
+  }
+
+  void clearSmartEnhance() {
+    if (project.customLut == null) return;
+    pushHistory();
+    project.customLut = null;
+    _touch();
+  }
+
   /* --------------------------------------------------------------------- */
   /* retouch                                                                */
   /* --------------------------------------------------------------------- */
