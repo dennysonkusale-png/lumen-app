@@ -1825,7 +1825,7 @@ class _CanvasPainter extends CustomPainter {
     }
 
     // live mask preview while the Mask tool is open
-    if (c.tool == 'mask' && c.project.mask != null) {
+    if (c.tool == 'mask' && c.showMaskWash && c.project.mask != null) {
       final ui.Image mask = c.project.mask!;
       canvas.drawImageRect(
         mask,

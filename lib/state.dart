@@ -424,14 +424,19 @@ class EditorController extends ChangeNotifier {
   final List<DocPoint> _maskStroke = <DocPoint>[];
   bool _masking = false;
 
+  ui.Image? _maskCommitted;
+  int _lastBakeMs = 0;
+  double maskPercent = 0;
+  bool showMaskWash = true;
+
   void beginMaskStroke(DocPoint point) {
     _masking = true;
+    _maskCommitted = project.mask;
     _maskStroke
       ..clear()
       ..add(point);
+    _bakeMask();
   }
-
-  List<DocPoint> get maskStrokePoints => _maskStroke;
 
   void extendMaskStroke(DocPoint point) {
     if (!_masking) return;
@@ -440,47 +445,89 @@ class EditorController extends ChangeNotifier {
     final double dy = point.dy - last.dy;
     if (dx * dx + dy * dy < 1) return;
     _maskStroke.add(point);
-    notifyListeners();
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastBakeMs > 90) {
+      _bakeMask();
+    } else {
+      notifyListeners();
+    }
+  }
+
+  /// Rebuilds the mask image from the committed mask plus the stroke so far,
+  /// so the effect appears while you paint instead of only on release.
+  Future<void> _bakeMask() async {
+    final ui.Image? ref = _photo;
+    if (ref == null) return;
+    _lastBakeMs = DateTime.now().millisecondsSinceEpoch;
+    final double ps = photoScale;
+    final int w = ref.width;
+    final int h = ref.height;
+    final double r = (maskSize / 2) / viewScale * ps;
+
+    final ui.PictureRecorder rec = ui.PictureRecorder();
+    final ui.Canvas canvas = ui.Canvas(rec);
+    if (_maskCommitted != null) {
+      canvas.drawImage(_maskCommitted!, ui.Offset.zero, ui.Paint());
+    }
+    for (final DocPoint pt in _maskStroke) {
+      final ui.Offset centre = ui.Offset(pt.dx * ps, pt.dy * ps);
+      canvas.drawCircle(
+        centre,
+        r,
+        ui.Paint()
+          ..blendMode = maskErase ? ui.BlendMode.dstOut : ui.BlendMode.srcOver
+          ..shader = ui.Gradient.radial(
+            centre,
+            r,
+            <ui.Color>[
+              const ui.Color(0xFFFFFFFF),
+              const ui.Color(0xFFFFFFFF),
+              const ui.Color(0x00FFFFFF),
+            ],
+            <double>[0.0, 0.72, 1.0],
+          ),
+      );
+    }
+    final ui.Image next = await rec.endRecording().toImage(w, h);
+
+    final ui.Image? previous = project.mask;
+    project.mask = next;
+    project.maskEnabled = true;
+    if (previous != null && !identical(previous, _maskCommitted)) {
+      previous.dispose();
+    }
+    maskPercent = await _coverage(next);
+    _touch();
+  }
+
+  Future<double> _coverage(ui.Image mask) async {
+    // cheap sample: read a small downscale and count opaque pixels
+    final ui.PictureRecorder rec = ui.PictureRecorder();
+    final ui.Canvas canvas = ui.Canvas(rec);
+    canvas.drawImageRect(
+      mask,
+      ui.Rect.fromLTWH(0, 0, mask.width.toDouble(), mask.height.toDouble()),
+      ui.Rect.fromLTWH(0, 0, 32, 32),
+      ui.Paint()..filterQuality = ui.FilterQuality.low,
+    );
+    final ui.Image small = await rec.endRecording().toImage(32, 32);
+    final ByteData? data = await small.toByteData(format: ui.ImageByteFormat.rawRgba);
+    small.dispose();
+    if (data == null) return 0;
+    final Uint8List px = data.buffer.asUint8List();
+    int on = 0;
+    for (int i = 3; i < px.length; i += 4) {
+      if (px[i] > 60) on++;
+    }
+    return on / (32 * 32) * 100;
   }
 
   Future<void> endMaskStroke() async {
     if (!_masking) return;
     _masking = false;
     if (_maskStroke.isEmpty) return;
-    final ui.Image? base = _photo;
-    if (base == null) return;
-
-    pushHistory();
-    final double ps = photoScale;
-    final int w = base.width;
-    final int h = base.height;
-    final double r = (maskSize / 2) / viewScale * ps;
-
-    final ui.PictureRecorder rec = ui.PictureRecorder();
-    final ui.Canvas canvas = ui.Canvas(rec);
-    if (project.mask != null) {
-      canvas.drawImage(project.mask!, ui.Offset.zero, ui.Paint());
-    }
-    for (final DocPoint pt in _maskStroke) {
-      final ui.Offset centre = ui.Offset(pt.dx * ps, pt.dy * ps);
-      final ui.Paint paint = ui.Paint()
-        ..blendMode = maskErase ? ui.BlendMode.dstOut : ui.BlendMode.srcOver
-        ..shader = ui.Gradient.radial(
-          centre,
-          r,
-          <ui.Color>[
-            const ui.Color(0xFFFFFFFF),
-            const ui.Color(0xFFFFFFFF),
-            const ui.Color(0x00FFFFFF),
-          ],
-          <double>[0.0, 0.72, 1.0],
-        );
-      canvas.drawCircle(centre, r, paint);
-    }
-    final ui.Image next = await rec.endRecording().toImage(w, h);
-    project.mask?.dispose();
-    project.mask = next;
-    project.maskEnabled = true;
+    await _bakeMask();
+    _maskCommitted = project.mask;
     _maskStroke.clear();
     _touch();
   }
@@ -489,7 +536,9 @@ class EditorController extends ChangeNotifier {
     if (project.mask == null) return;
     pushHistory();
     project.mask = null;
+    _maskCommitted = null;
     project.maskEnabled = false;
+    maskPercent = 0;
     _touch();
   }
 

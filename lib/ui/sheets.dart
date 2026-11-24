@@ -974,6 +974,20 @@ class MaskSheet extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             Expanded(
+              child: PillButton(
+                label: c.showMaskWash ? 'Hide wash' : 'Show wash',
+                onTap: () {
+                  c.showMaskWash = !c.showMaskWash;
+                  c.refresh();
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: <Widget>[
+            Expanded(
               child: PillButton(label: 'Invert', onTap: () => c.invertMask()),
             ),
             const SizedBox(width: 8),
@@ -982,6 +996,14 @@ class MaskSheet extends StatelessWidget {
             ),
           ],
         ),
+        if (hasMask)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              'Mask covers ${c.maskPercent.round()}% of the photo.',
+              style: const TextStyle(fontSize: 11, color: Color(0xFFB9AEFF)),
+            ),
+          ),
       ],
     );
   }
