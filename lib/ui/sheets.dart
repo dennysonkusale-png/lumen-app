@@ -283,18 +283,18 @@ class CropSheet extends StatelessWidget {
           onClose: () => c.setTool(null),
           onReset: () {
             c.pushHistory();
-            c.project.crop = CropRect(
-              x: 0,
-              y: 0,
-              w: c.project.sourceW.toDouble(),
-              h: c.project.sourceH.toDouble(),
+            c.setCropRect(
+              0,
+              0,
+              c.project.sourceW.toDouble(),
+              c.project.sourceH.toDouble(),
             );
             c.setCropAngle(0);
           },
         ),
         ChipRow(
           labels: ratios,
-          selected: 0,
+          selected: c.cropAspectLock == 0 ? 0 : 1,
           onSelected: (int i) {
             c.pushHistory();
             c.setCropAspect(ratios[i]);
@@ -315,7 +315,12 @@ class CropSheet extends StatelessWidget {
             const SizedBox(width: 8),
             PillButton(label: 'Reset', onTap: () {
               c.pushHistory();
-              c.project.crop.angle = 0;
+              c.setCropRect(
+                0,
+                0,
+                c.project.sourceW.toDouble(),
+                c.project.sourceH.toDouble(),
+              );
               c.setCropAngle(0);
             }),
           ],
@@ -333,8 +338,9 @@ class CropSheet extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.only(top: 6),
           child: Text(
-            'Aspect presets and straighten are ported. Free-form crop handles are on the roadmap.',
-            style: TextStyle(fontSize: 10.5, color: Color(0xFF71717E)),
+            'Drag the white handles to crop freely, drag inside the frame to move it, '
+            'or drag outside to draw a new frame.',
+            style: TextStyle(fontSize: 10.5, color: Color(0xFF8A8A94), height: 1.5),
           ),
         ),
       ],

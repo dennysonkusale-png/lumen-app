@@ -107,6 +107,8 @@ class EditorController extends ChangeNotifier {
   }
 
   void setTool(String? next) {
+    if (tool == 'crop' && next != 'crop') cropping = false;
+    if (next == 'crop') cropping = true;
     tool = next;
     if (next == null || (next != 'text' && next != 'sticker')) {
       // keep the selection only for tools that act on it
@@ -284,11 +286,13 @@ class EditorController extends ChangeNotifier {
   void setCropAspect(String label) {
     final CropRect c = project.crop;
     if (label == 'Free') {
+      cropAspectLock = 0;
       _touch();
       return;
     }
     final List<String> parts = label.split(':');
     final double ratio = double.parse(parts[0]) / double.parse(parts[1]);
+    cropAspectLock = ratio;
     double w = c.w;
     double h = w / ratio;
     if (h > project.sourceH) {
@@ -509,6 +513,35 @@ class EditorController extends ChangeNotifier {
     final ui.Image inverted = await rec.endRecording().toImage(current.width, current.height);
     project.mask = inverted;
     project.maskEnabled = true;
+    _touch();
+  }
+
+  /* --------------------------------------------------------------------- */
+  /* free-form crop of the document                                         */
+  /* --------------------------------------------------------------------- */
+
+  bool cropping = false;
+  double cropAspectLock = 0;   // 0 = free
+
+  void startCrop() {
+    cropping = true;
+    notifyListeners();
+  }
+
+  void endCrop() {
+    cropping = false;
+    _touch();
+  }
+
+  void setCropRect(double x, double y, double w, double h) {
+    final double sw = project.sourceW.toDouble();
+    final double sh = project.sourceH.toDouble();
+    final double cw = clampDouble(w, 24, sw);
+    final double ch = clampDouble(h, 24, sh);
+    project.crop.x = clampDouble(x, 0, math.max(0, sw - cw));
+    project.crop.y = clampDouble(y, 0, math.max(0, sh - ch));
+    project.crop.w = cw;
+    project.crop.h = ch;
     _touch();
   }
 

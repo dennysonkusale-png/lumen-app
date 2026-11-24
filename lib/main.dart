@@ -51,6 +51,9 @@ class _EditorScreenState extends State<EditorScreen> {
   Offset? _cropStart;
   Offset? _cropLast;
   bool _overBin = false;
+  int _cropHandle = -9;           // -9 none, -2 new, -1 move, 0..7 handles
+  CropRect? _cropBase;
+  Offset _cropStartSrc = Offset.zero;
   Layer? _panFrame;
   double _panStartU = 0.5;
   double _panStartV = 0.5;
@@ -810,6 +813,134 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  List<double> _cropFit() {
+    final ui.Image? src = c.project.source;
+    if (src == null) return <double>[1, 0, 0];
+    final double s = math.min(
+      (c.viewport.width - 24) / src.width,
+      (c.viewport.height - 24) / src.height,
+    );
+    return <double>[
+      s,
+      (c.viewport.width - src.width * s) / 2,
+      (c.viewport.height - src.height * s) / 2,
+    ];
+  }
+
+  Offset _toSource(Offset local) {
+    final List<double> f = _cropFit();
+    return Offset((local.dx - f[1]) / f[0], (local.dy - f[2]) / f[0]);
+  }
+
+  int _cropHandleAt(Offset local) {
+    final List<double> f = _cropFit();
+    final double s = f[0];
+    final CropRect crop = c.project.crop;
+    final double left = f[1] + crop.x * s;
+    final double top = f[2] + crop.y * s;
+    final double right = left + crop.w * s;
+    final double bottom = top + crop.h * s;
+    final double midX = (left + right) / 2;
+    final double midY = (top + bottom) / 2;
+    final List<Offset> points = <Offset>[
+      Offset(left, top), Offset(midX, top), Offset(right, top), Offset(right, midY),
+      Offset(right, bottom), Offset(midX, bottom), Offset(left, bottom), Offset(left, midY),
+    ];
+    for (int i = 0; i < points.length; i++) {
+      if ((local - points[i]).distance < 34) return i;
+    }
+    if (local.dx > left && local.dx < right && local.dy > top && local.dy < bottom) {
+      return -1;
+    }
+    return -2;
+  }
+
+  void _applyCropDrag(Offset p) {
+    final CropRect base = _cropBase!;
+    final double sw = c.project.sourceW.toDouble();
+    final double sh = c.project.sourceH.toDouble();
+    double x0 = base.x;
+    double y0 = base.y;
+    double x1 = base.x + base.w;
+    double y1 = base.y + base.h;
+
+    if (_cropHandle == -2) {
+      x0 = math.min(_cropStartSrc.dx, p.dx);
+      x1 = math.max(_cropStartSrc.dx, p.dx);
+      y0 = math.min(_cropStartSrc.dy, p.dy);
+      y1 = math.max(_cropStartSrc.dy, p.dy);
+    } else if (_cropHandle == -1) {
+      final double dx = p.dx - _cropStartSrc.dx;
+      final double dy = p.dy - _cropStartSrc.dy;
+      final double w = base.w;
+      final double h = base.h;
+      x0 = clampDouble(base.x + dx, 0, sw - w);
+      y0 = clampDouble(base.y + dy, 0, sh - h);
+      x1 = x0 + w;
+      y1 = y0 + h;
+    } else {
+      switch (_cropHandle) {
+        case 0:
+          x0 = p.dx; y0 = p.dy;
+          break;
+        case 1:
+          y0 = p.dy;
+          break;
+        case 2:
+          x1 = p.dx; y0 = p.dy;
+          break;
+        case 3:
+          x1 = p.dx;
+          break;
+        case 4:
+          x1 = p.dx; y1 = p.dy;
+          break;
+        case 5:
+          y1 = p.dy;
+          break;
+        case 6:
+          x0 = p.dx; y1 = p.dy;
+          break;
+        default:
+          x0 = p.dx;
+          break;
+      }
+    }
+
+    x0 = clampDouble(x0, 0, sw);
+    x1 = clampDouble(x1, 0, sw);
+    y0 = clampDouble(y0, 0, sh);
+    y1 = clampDouble(y1, 0, sh);
+    double w = math.max(32, x1 - x0);
+    double h = math.max(32, y1 - y0);
+
+    if (c.cropAspectLock > 0) {
+      final double want = c.cropAspectLock;
+      if (w / h > want) {
+        w = h * want;
+      } else {
+        h = w / want;
+      }
+      if (_cropHandle == 0 || _cropHandle == 6 || _cropHandle == 7 || _cropHandle == 3) {
+        x0 = math.max(0, x1 - w);
+      }
+      if (_cropHandle == 0 || _cropHandle == 1 || _cropHandle == 2) {
+        y0 = math.max(0, y1 - h);
+      }
+      w = math.min(w, sw - x0);
+      h = math.min(h, sh - y0);
+      if (want > 0) {
+        if (w / h > want) {
+          w = h * want;
+        } else {
+          h = w / want;
+        }
+      }
+    }
+
+    c.setCropRect(x0, y0, w, h);
+  }
+
   void _pickColourAt(Offset local) {
     c.sampleAt(c.screenToDoc(local)).then((ui.Color? picked) {
       if (picked == null) {
@@ -838,6 +969,13 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _onScaleStart(ScaleStartDetails details) {
+    if (c.cropping) {
+      _cropHandle = _cropHandleAt(details.localFocalPoint);
+      _cropBase = c.project.crop.copy();
+      _cropStartSrc = _toSource(details.localFocalPoint);
+      c.pushHistory();
+      return;
+    }
     if (c.croppingLayer) {
       _cropStart = details.localFocalPoint;
       _cropLast = details.localFocalPoint;
@@ -891,6 +1029,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
+    if (c.cropping && _cropBase != null) {
+      _applyCropDrag(_toSource(details.localFocalPoint));
+      return;
+    }
     if (details.pointerCount >= 2) {
       c.zoom = clampDouble(_startZoom * details.scale, 0.6, 10);
       c.panX = _startPan.dx + (details.localFocalPoint.dx - _startFocal.dx);
@@ -995,6 +1137,11 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
+    if (c.cropping) {
+      _cropBase = null;
+      _cropHandle = -9;
+      return;
+    }
     if (c.croppingLayer) {
       final Layer? layer = c.selectedLayer;
       final Rect? preview = c.cropPreview;
@@ -1482,6 +1629,10 @@ class _CanvasPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (c.cropping) {
+      _paintCrop(canvas, size);
+      return;
+    }
     final ui.Image? photo = c.photo;
     if (photo == null) return;
 
@@ -1681,6 +1832,97 @@ class _CanvasPainter extends CustomPainter {
           );
         }
       }
+    }
+  }
+
+  void _paintCrop(Canvas canvas, Size size) {
+    final ui.Image? src = c.project.source;
+    if (src == null) return;
+    final double s = math.min(
+      (size.width - 24) / src.width,
+      (size.height - 24) / src.height,
+    );
+    final double ox = (size.width - src.width * s) / 2;
+    final double oy = (size.height - src.height * s) / 2;
+    final Rect full =
+        Rect.fromLTWH(ox, oy, src.width * s, src.height * s);
+    canvas.drawImageRect(
+      src,
+      Rect.fromLTWH(0, 0, src.width.toDouble(), src.height.toDouble()),
+      full,
+      Paint()..filterQuality = FilterQuality.high,
+    );
+
+    final CropRect crop = c.project.crop;
+    final Rect frame = Rect.fromLTWH(
+      ox + crop.x * s,
+      oy + crop.y * s,
+      crop.w * s,
+      crop.h * s,
+    );
+
+    final Path outside = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(Offset.zero & size),
+      Path()..addRect(frame),
+    );
+    canvas.drawPath(outside, Paint()..color = const Color(0xAA000000));
+
+    canvas.drawRect(
+      frame.inflate(1.5),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..color = const Color(0x99000000),
+    );
+    canvas.drawRect(
+      frame,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5
+        ..color = const Color(0xFFFFFFFF),
+    );
+
+    final Paint grid = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = const Color(0x66FFFFFF);
+    for (int i = 1; i < 3; i++) {
+      canvas.drawLine(
+        Offset(frame.left + frame.width * i / 3, frame.top),
+        Offset(frame.left + frame.width * i / 3, frame.bottom),
+        grid,
+      );
+      canvas.drawLine(
+        Offset(frame.left, frame.top + frame.height * i / 3),
+        Offset(frame.right, frame.top + frame.height * i / 3),
+        grid,
+      );
+    }
+
+    final List<Offset> handles = <Offset>[
+      frame.topLeft,
+      Offset(frame.center.dx, frame.top),
+      frame.topRight,
+      Offset(frame.right, frame.center.dy),
+      frame.bottomRight,
+      Offset(frame.center.dx, frame.bottom),
+      frame.bottomLeft,
+      Offset(frame.left, frame.center.dy),
+    ];
+    for (final Offset h in handles) {
+      final Rect box = Rect.fromCenter(center: h, width: 20, height: 20);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(box, const Radius.circular(3)),
+        Paint()..color = const Color(0xFFFFFFFF),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(box, const Radius.circular(3)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = kAccent,
+      );
     }
   }
 
