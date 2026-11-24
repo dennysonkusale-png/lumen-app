@@ -1717,6 +1717,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     max: 100,
                     onChanged: (double v) => setSheet(() => quality = v.round()),
                   ),
+                  ],
                   const SizedBox(height: 14),
                   Row(
                     children: <Widget>[
