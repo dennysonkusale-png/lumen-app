@@ -72,6 +72,24 @@ jobs:
       - name: Install packages
         run: flutter pub get
 
+      - name: Patch plugin Android configs
+        # flutter_quick_video_encoder still compiles against an older SDK than
+        # its AndroidX dependencies require; lift it to 36 in the pub cache.
+        run: |
+          set -e
+          for dir in "$HOME"/.pub-cache/hosted/pub.dev/flutter_quick_video_encoder-*; do
+            [ -d "$dir" ] || continue
+            for f in "$dir/android/build.gradle" "$dir/android/build.gradle.kts"; do
+              [ -f "$f" ] || continue
+              sed -i -E 's/compileSdkVersion[[:space:]]*[0-9]+/compileSdkVersion 36/' "$f"
+              sed -i -E 's/compileSdk[[:space:]]*=[[:space:]]*[0-9]+/compileSdk = 36/' "$f"
+              sed -i -E 's/minSdkVersion[[:space:]]*[0-9]+/minSdkVersion 23/' "$f"
+              sed -i -E 's/minSdk[[:space:]]*=[[:space:]]*[0-9]+/minSdk = 23/' "$f"
+              echo "patched $f"
+              grep -nE "compileSdk|minSdk" "$f" || true
+            done
+          done
+
       - name: Analyze (report only)
         run: |
           set +e
