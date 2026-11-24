@@ -1001,10 +1001,17 @@ class _EditorScreenState extends State<EditorScreen> {
       _pickColourAt(details.localPosition);
       return;
     }
-    if (c.croppingLayer) return;
+    if (c.croppingLayer || c.cropping) return;
     final Layer? hit = _hitLayer(details.localPosition);
-    if (hit != null && hit.id != c.selectedLayerId) {
-      c.selectLayer(hit.id);
+    if (hit != null) {
+      // tapping an object selects it and shows its box
+      if (hit.id != c.selectedLayerId) {
+        c.selectLayer(hit.id);
+        c.refresh();
+      }
+    } else if (c.selectedLayerId != null) {
+      // tapping empty space clears the selection and hides the box
+      c.selectLayer(null);
       c.refresh();
     }
   }
@@ -1053,6 +1060,11 @@ class _EditorScreenState extends State<EditorScreen> {
     }
 
     final Layer? hit = _hitLayer(details.localFocalPoint);
+    if (hit == null && c.selectedLayerId != null && c.tool != 'retouch' && c.tool != 'mask') {
+      // dragging on empty canvas deselects, so the box does not float around
+      c.selectLayer(null);
+      c.refresh();
+    }
     if (hit != null) {
       c.selectLayer(hit.id);
       c.pushHistory();
