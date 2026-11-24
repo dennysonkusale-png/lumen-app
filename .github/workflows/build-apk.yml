@@ -85,24 +85,24 @@ jobs:
         # last stage, which would hide a failed build.
         # Retried because Maven Central rate-limits (HTTP 429) on busy days.
         run: |
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5; do
             if flutter build apk --debug; then exit 0; fi
-            echo "::warning::debug build attempt $attempt failed, retrying in 30s"
-            sleep 30
+            echo "::warning::debug build attempt $attempt failed, retrying in 60s"
+            sleep 60
           done
-          echo "debug build failed after 3 attempts"
+          echo "debug build failed after 5 attempts"
           exit 1
 
       - name: Build release APK
         # The Flutter template signs release builds with the debug keystore, so
         # this installs anywhere. Fine for testing, not for the Play Store.
         run: |
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5; do
             if flutter build apk --release; then exit 0; fi
-            echo "::warning::release build attempt $attempt failed, retrying in 30s"
-            sleep 30
+            echo "::warning::release build attempt $attempt failed, retrying in 60s"
+            sleep 60
           done
-          echo "release build failed after 3 attempts"
+          echo "release build failed after 5 attempts"
           exit 1
 
       - name: Show what was produced
