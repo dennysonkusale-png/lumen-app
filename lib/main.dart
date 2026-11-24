@@ -1583,6 +1583,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _openExport() {
     bool png = false;
+    bool video = false;
+    double videoSeconds = 5;
+    bool kenBurns = true;
     int quality = 92;
     double longEdge = 0; // 0 = original
 
@@ -1623,11 +1626,47 @@ class _EditorScreenState extends State<EditorScreen> {
                       const SizedBox(width: 8),
                       PillButton(
                         label: 'PNG',
-                        primary: png,
-                        onTap: () => setSheet(() => png = true),
+                        primary: png && !video,
+                        onTap: () => setSheet(() {
+                          png = true;
+                          video = false;
+                        }),
+                      ),
+                      const SizedBox(width: 8),
+                      PillButton(
+                        label: 'MP4',
+                        primary: video,
+                        onTap: () => setSheet(() => video = true),
                       ),
                     ],
                   ),
+                  if (video) ...<Widget>[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Exports the whole canvas as a short video at 1080 px. '
+                      'Duration and a slow zoom:',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF7E7E8C), height: 1.5),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: <Widget>[
+                        for (final double s2 in <double>[3, 5, 10])
+                          PillButton(
+                            label: '${s2.round()}s',
+                            primary: videoSeconds == s2,
+                            onTap: () => setSheet(() => videoSeconds = s2),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    PillButton(
+                      label: kenBurns ? 'Slow zoom: on' : 'Slow zoom: off',
+                      primary: kenBurns,
+                      onTap: () => setSheet(() => kenBurns = !kenBurns),
+                    ),
+                  ],
+                  if (!video) ...<Widget>[
                   const SizedBox(height: 10),
                   Row(
                     children: <Widget>[
@@ -1694,7 +1733,15 @@ class _EditorScreenState extends State<EditorScreen> {
                           primary: true,
                           onTap: () async {
                             Navigator.of(context).pop();
-                            await _runExport(png: png, quality: quality, longEdge: longEdge);
+                            if (video) {
+                              await _runVideoExport(
+                                seconds: videoSeconds,
+                                kenBurns: kenBurns,
+                              );
+                            } else {
+                              await _runExport(
+                                  png: png, quality: quality, longEdge: longEdge);
+                            }
                           },
                         ),
                       ),
@@ -1707,6 +1754,23 @@ class _EditorScreenState extends State<EditorScreen> {
         );
       },
     );
+  }
+
+  Future<void> _runVideoExport({
+    required double seconds,
+    required bool kenBurns,
+  }) async {
+    final String? path = await c.exportVideo(seconds: seconds, kenBurns: kenBurns);
+    if (path == null) {
+      _toast(c.exportError ?? 'Video export failed');
+      return;
+    }
+    try {
+      await Share.shareXFiles(<XFile>[XFile(path)], text: c.project.name);
+    } catch (error) {
+      debugPrint('share failed: $error');
+      _toast('Saved to $path');
+    }
   }
 
   Future<void> _runExport({

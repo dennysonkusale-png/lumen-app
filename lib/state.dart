@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_quick_video_encoder/flutter_quick_video_encoder.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 
 import 'model.dart';
@@ -1103,6 +1105,105 @@ class EditorController extends ChangeNotifier {
   /* --------------------------------------------------------------------- */
 
   String? exportError;
+
+  /// Renders the document to an MP4 at 1080 px on the long edge.
+  /// [kenBurns] adds a slow zoom so a still looks alive.
+  Future<String?> exportVideo({
+    int fps = 30,
+    double seconds = 5,
+    bool kenBurns = true,
+    void Function(double)? onProgress,
+  }) async {
+    if (project.source == null) return null;
+    busy = true;
+    busyLabel = 'Rendering video…';
+    notifyListeners();
+    exportError = null;
+    ui.Image? still;
+    try {
+      final double base = math.max(docW, docH);
+      final double scale = 1080 / base;
+      int w = (docW * scale).round();
+      int h = (docH * scale).round();
+      if (w.isOdd) w -= 1;          // H.264 needs even dimensions
+      if (h.isOdd) h -= 1;
+      if (w < 16 || h < 16) {
+        exportError = 'The canvas is too small for video';
+        return null;
+      }
+
+      final ui.Image photo = await buildPhoto(project, scale);
+      final ui.PictureRecorder rec = ui.PictureRecorder();
+      final ui.Canvas canvas = ui.Canvas(rec);
+      canvas.drawImageRect(
+        photo,
+        ui.Rect.fromLTWH(0, 0, photo.width.toDouble(), photo.height.toDouble()),
+        ui.Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
+        ui.Paint()..filterQuality = ui.FilterQuality.high,
+      );
+      canvas.drawPicture(retouchPicture(project, scale, photo));
+      canvas.save();
+      final double lw = docW * scale;
+      final double lh = docH * scale;
+      canvas.translate((w - lw) / 2, (h - lh) / 2);
+      drawLayers(canvas, project, scale);
+      canvas.restore();
+      still = await rec.endRecording().toImage(w, h);
+      photo.dispose();
+
+      final Directory dir = await getTemporaryDirectory();
+      final String path =
+          '${dir.path}/lumen-${DateTime.now().millisecondsSinceEpoch}.mp4';
+
+      await FlutterQuickVideoEncoder.setup(
+        width: w,
+        height: h,
+        fps: fps,
+        videoBitrate: 6000000,
+        profileLevel: ProfileLevel.any,
+        audioBitrate: 0,
+        audioChannels: 0,
+        sampleRate: 0,
+        filepath: path,
+      );
+
+      final int frames = math.max(1, (fps * seconds).round());
+      for (int i = 0; i < frames; i++) {
+        final double t = frames <= 1 ? 0.0 : i / (frames - 1);
+        final ui.PictureRecorder fr = ui.PictureRecorder();
+        final ui.Canvas fc = ui.Canvas(fr);
+        if (kenBurns) {
+          final double zoom = 1.0 + 0.10 * t;
+          fc.save();
+          fc.translate(w / 2, h / 2);
+          fc.scale(zoom);
+          fc.translate(-w / 2, -h / 2);
+          fc.drawImage(still, ui.Offset.zero,
+              ui.Paint()..filterQuality = ui.FilterQuality.high);
+          fc.restore();
+        } else {
+          fc.drawImage(still, ui.Offset.zero, ui.Paint());
+        }
+        final ui.Image frame = await fr.endRecording().toImage(w, h);
+        final ByteData? data =
+            await frame.toByteData(format: ui.ImageByteFormat.rawRgba);
+        frame.dispose();
+        if (data == null) continue;
+        await FlutterQuickVideoEncoder.appendVideoFrame(data.buffer.asUint8List());
+        onProgress?.call((i + 1) / frames);
+      }
+      await FlutterQuickVideoEncoder.finish();
+      return path;
+    } catch (error) {
+      debugPrint('video export failed: $error');
+      exportError = 'Video export failed: $error';
+      return null;
+    } finally {
+      still?.dispose();
+      busy = false;
+      notifyListeners();
+    }
+  }
 
   Future<Uint8List?> encodeExport({
     required bool png,
