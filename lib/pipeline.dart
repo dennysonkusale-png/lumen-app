@@ -475,7 +475,7 @@ void drawLayers(ui.Canvas canvas, Project project, double scale) {
     }
     switch (layer.type) {
       case LayerType.text:
-        _drawText(canvas, layer, h);
+        _drawText(canvas, layer, h, layer.w * w);
         break;
       case LayerType.sticker:
         _drawSticker(canvas, layer, h);
@@ -492,17 +492,27 @@ void drawLayers(ui.Canvas canvas, Project project, double scale) {
   }
 }
 
-void _drawText(ui.Canvas canvas, Layer layer, double docHeight) {
+void _drawText(ui.Canvas canvas, Layer layer, double docHeight, double boxWidth) {
   final double fs = math.max(4.0, layer.size * docHeight);
-  final List<String> lines = layer.text.split('\n');
-  final double lineHeight = fs * 1.22;
-  final double total = lineHeight * lines.length;
+  final String body = layer.uppercase ? layer.text.toUpperCase() : layer.text;
+  final List<String> lines = body.split('\n');
+  final double lineStep = fs * (layer.lineHeight <= 0.2 ? 1.22 : layer.lineHeight);
+  final double total = lineStep * lines.length;
+  final double bw = boxWidth > 1 ? boxWidth : fs * 12;
+  final double half = bw / 2;
+
+  final ui.TextAlign align = layer.align == 'left'
+      ? ui.TextAlign.left
+      : (layer.align == 'right'
+          ? ui.TextAlign.right
+          : (layer.align == 'justify' ? ui.TextAlign.justify : ui.TextAlign.center));
 
   final TextStyle fillStyle = TextStyle(
     fontFamily: layer.font,
     fontSize: fs,
     fontWeight: _weight(layer.weight),
     fontStyle: layer.italic ? FontStyle.italic : FontStyle.normal,
+    letterSpacing: fs * layer.tracking,
     color: ui.Color(layer.color),
     shadows: layer.shadow
         ? <ui.Shadow>[
@@ -521,6 +531,7 @@ void _drawText(ui.Canvas canvas, Layer layer, double docHeight) {
           fontSize: fs,
           fontWeight: _weight(layer.weight),
           fontStyle: layer.italic ? FontStyle.italic : FontStyle.normal,
+          letterSpacing: fs * layer.tracking,
           foreground: ui.Paint()
             ..style = ui.PaintingStyle.stroke
             ..strokeWidth = fs * layer.strokeWidth
@@ -534,18 +545,18 @@ void _drawText(ui.Canvas canvas, Layer layer, double docHeight) {
     if (outlineStyle != null) {
       final TextPainter outline = TextPainter(
         text: TextSpan(text: line, style: outlineStyle),
-        textAlign: TextAlign.center,
+        textAlign: align,
         textDirection: TextDirection.ltr,
-      )..layout();
-      outline.paint(canvas, ui.Offset(-outline.width / 2, y + (lineHeight - outline.height) / 2));
+      )..layout(minWidth: bw, maxWidth: bw);
+      outline.paint(canvas, ui.Offset(-half, y + (lineStep - outline.height) / 2));
     }
     final TextPainter painter = TextPainter(
       text: TextSpan(text: line, style: fillStyle),
-      textAlign: TextAlign.center,
+      textAlign: align,
       textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(canvas, ui.Offset(-painter.width / 2, y + (lineHeight - painter.height) / 2));
-    y += lineHeight;
+    )..layout(minWidth: bw, maxWidth: bw);
+    painter.paint(canvas, ui.Offset(-half, y + (lineStep - painter.height) / 2));
+    y += lineStep;
   }
 }
 

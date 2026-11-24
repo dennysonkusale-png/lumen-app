@@ -240,6 +240,10 @@ class Layer {
   int strokeColor;
   double strokeWidth;   // fraction of font size
   bool shadow;
+  String align;        // left | center | right | justify
+  double tracking;     // letter spacing, fraction of font size
+  double lineHeight;   // multiplier of font size
+  bool uppercase;
   String shape;         // rect | ellipse | triangle | star | heart | arrow | line
   String emoji;
   ui.Image? pixels;     // only for LayerType.image
@@ -270,6 +274,10 @@ class Layer {
     this.strokeColor = 0xFF0E0E11,
     this.strokeWidth = 0,
     this.shadow = true,
+    this.align = 'center',
+    this.tracking = 0,
+    this.lineHeight = 1.22,
+    this.uppercase = false,
     this.shape = 'rect',
     this.emoji = '✨',
     this.pixels,
@@ -308,6 +316,10 @@ class Layer {
         strokeColor: strokeColor,
         strokeWidth: strokeWidth,
         shadow: shadow,
+        align: align,
+        tracking: tracking,
+        lineHeight: lineHeight,
+        uppercase: uppercase,
         shape: shape,
         emoji: emoji,
         pixels: pixels,

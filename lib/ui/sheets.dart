@@ -563,7 +563,97 @@ class _TextSheetState extends State<TextSheet> {
           defaultValue: 0,
           onChanged: (double v) => c.mutateLayer(layer, (Layer l) => l.strokeWidth = v / 100),
         ),
-        const SizedBox(height: 8),
+        const SectionLabel('Alignment'),
+        Row(
+          children: <Widget>[
+            for (final List<Object> option in <List<Object>>[
+              <Object>['left', Icons.format_align_left],
+              <Object>['center', Icons.format_align_center],
+              <Object>['right', Icons.format_align_right],
+              <Object>['justify', Icons.format_align_justify],
+            ])
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => c.mutateLayer(
+                      layer, (Layer l) => l.align = option[0] as String),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: layer.align == option[0]
+                          ? const Color(0xFF26224A)
+                          : const Color(0xFF20202A),
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(
+                        color: layer.align == option[0]
+                            ? const Color(0xFF4B3FBF)
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Icon(
+                      option[1] as IconData,
+                      size: 19,
+                      color: layer.align == option[0]
+                          ? const Color(0xFFB9AEFF)
+                          : const Color(0xFFA9A9B8),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SectionLabel('Paragraph'),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: PillButton(
+                label: 'UPPERCASE',
+                primary: layer.uppercase,
+                onTap: () =>
+                    c.mutateLayer(layer, (Layer l) => l.uppercase = !l.uppercase),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: PillButton(
+                label: 'Bold',
+                primary: layer.weight >= 700,
+                onTap: () => c.mutateLayer(
+                    layer, (Layer l) => l.weight = l.weight >= 700 ? 400 : 700),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: PillButton(
+                label: 'Italic',
+                primary: layer.italic,
+                onTap: () => c.mutateLayer(layer, (Layer l) => l.italic = !l.italic),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        SliderRow(
+          label: 'Line height',
+          value: layer.lineHeight * 100,
+          min: 80,
+          max: 220,
+          defaultValue: 122,
+          suffix: layer.lineHeight.toStringAsFixed(2),
+          onChanged: (double v) =>
+              c.mutateLayer(layer, (Layer l) => l.lineHeight = v / 100),
+        ),
+        SliderRow(
+          label: 'Letter space',
+          value: layer.tracking * 100,
+          min: -6,
+          max: 30,
+          defaultValue: 0,
+          suffix: (layer.tracking * 100).round().toString(),
+          onChanged: (double v) =>
+              c.mutateLayer(layer, (Layer l) => l.tracking = v / 100),
+        ),
+        const SizedBox(height: 10),
       ],
     );
   }
