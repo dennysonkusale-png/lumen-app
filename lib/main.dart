@@ -1,13 +1,17 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:get_thumbnail_video/index.dart';
+import 'package:get_thumbnail_video/video_thumbnail.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:video_player/video_player.dart';
 
 import 'model.dart';
 import 'pipeline.dart';
@@ -223,9 +227,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     () => _pick(ImageSource.gallery)),
                 _homeTile('Camera', Icons.photo_camera_outlined,
                     () => _pick(ImageSource.camera)),
-                _homeTile('Video', Icons.videocam_outlined, () {
-                  _toast('Video editing is not in this build yet');
-                }, muted: true),
+                _homeTile('Video', Icons.videocam_outlined, _openVideo),
                 _homeTile('Template', Icons.dashboard_customize_outlined, _openTemplates),
                 _homeTile('Collage', Icons.grid_view_outlined, _openCollage),
                 _homeTile('Drive', Icons.cloud_outlined, _pickFromFiles),
@@ -303,6 +305,37 @@ class _EditorScreenState extends State<EditorScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openVideo() async {
+    try {
+      final XFile? file = await ImagePicker().pickVideo(source: ImageSource.gallery);
+      if (file == null) return;
+      final String path = file.path;
+
+      final VideoPlayerController probe = VideoPlayerController.file(File(path));
+      await probe.initialize();
+      final Duration total = probe.value.duration;
+      await probe.dispose();
+      if (total.inMilliseconds <= 0) {
+        _toast('Could not read that video');
+        return;
+      }
+      if (!mounted) return;
+      showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: kPanel,
+        isScrollControlled: true,
+        builder: (BuildContext context) => _VideoFrameSheet(
+          path: path,
+          durationMs: total.inMilliseconds,
+          controller: c,
+        ),
+      );
+    } catch (error) {
+      _toast('Could not open that video');
+      debugPrint('video failed: $error');
+    }
   }
 
   void _openTemplates() {
@@ -2033,4 +2066,178 @@ class _LayoutPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LayoutPainter oldDelegate) => false;
+}
+
+
+/// Picks a moment in a video and pulls that frame in as a photo document.
+class _VideoFrameSheet extends StatefulWidget {
+  final String path;
+  final int durationMs;
+  final EditorController controller;
+
+  const _VideoFrameSheet({
+    required this.path,
+    required this.durationMs,
+    required this.controller,
+  });
+
+  @override
+  State<_VideoFrameSheet> createState() => _VideoFrameSheetState();
+}
+
+class _VideoFrameSheetState extends State<_VideoFrameSheet> {
+  late int _timeMs;
+  Uint8List? _preview;
+  bool _loading = true;
+  bool _saving = false;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _timeMs = widget.durationMs ~/ 2;
+    _loadPreview();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  String _stamp(int ms) {
+    final int total = ms ~/ 1000;
+    final int m = total ~/ 60;
+    final int s = total % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _loadPreview() async {
+    final int at = _timeMs;
+    try {
+      final Uint8List bytes = await VideoThumbnail.thumbnailData(
+        video: widget.path,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 520,
+        quality: 80,
+        timeMs: at,
+      );
+      if (!mounted || at != _timeMs) return;
+      setState(() {
+        _preview = bytes;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  void _scrub(int value) {
+    setState(() {
+      _timeMs = value;
+      _loading = true;
+    });
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 220), _loadPreview);
+  }
+
+  Future<void> _useFrame() async {
+    setState(() => _saving = true);
+    try {
+      final Uint8List bytes = await VideoThumbnail.thumbnailData(
+        video: widget.path,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 2400,
+        quality: 95,
+        timeMs: _timeMs,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await widget.controller.loadBytes(bytes, 'Video frame ${_stamp(_timeMs)}');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const Text('Frame from video',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          const Text(
+            'Scrub to the moment you want, then pull that frame in and edit it like a photo.',
+            style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C), height: 1.5),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            height: 220,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0C0C0F),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: kBorder),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                if (_preview != null)
+                  Image.memory(_preview!, fit: BoxFit.contain, gaplessPlayback: true),
+                if (_loading)
+                  const Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.4, color: kAccent),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Text(_stamp(_timeMs),
+                  style: const TextStyle(fontSize: 12, color: Color(0xFFB9AEFF))),
+              const Spacer(),
+              Text(_stamp(widget.durationMs),
+                  style: const TextStyle(fontSize: 12, color: Color(0xFF71717E))),
+            ],
+          ),
+          Slider(
+            value: _timeMs.toDouble().clamp(0, widget.durationMs.toDouble()),
+            min: 0,
+            max: widget.durationMs.toDouble(),
+            onChanged: (double v) => _scrub(v.round()),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: PillButton(
+                  label: 'Cancel',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: PillButton(
+                  label: _saving ? 'Working…' : 'Use this frame',
+                  primary: true,
+                  onTap: _saving ? null : _useFrame,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
