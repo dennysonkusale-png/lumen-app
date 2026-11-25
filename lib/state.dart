@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 
 import 'model.dart';
+import 'project_io.dart';
 import 'pipeline.dart';
 
 /// A single point in document space (crop pixels).
@@ -156,9 +157,94 @@ class EditorController extends ChangeNotifier {
   /* render                                                                 */
   /* --------------------------------------------------------------------- */
 
+  bool _dirty = false;
+  bool _savingNow = false;
+  Timer? _autosaveTimer;
+  String lastSavedLabel = '';
+  bool get hasUnsavedWork => _dirty;
+
   void _touch() {
     _revision++;
+    _dirty = true;
     refresh();
+  }
+
+  /// One fixed folder — every autosave overwrites the previous one.
+  Future<Directory> autosaveDir() async {
+    final Directory base = await getApplicationDocumentsDirectory();
+    return Directory('${base.path}/lumen/autosave');
+  }
+
+  Future<bool> autosaveExists() async {
+    try {
+      return await ProjectStore.exists(await autosaveDir());
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Writes the project to the single autosave slot. Returns false on failure.
+  Future<bool> saveNow({bool quiet = true}) async {
+    if (project.source == null || _savingNow) return false;
+    _savingNow = true;
+    try {
+      final Directory dir = await autosaveDir();
+      await ProjectStore.save(project, dir);
+      _dirty = false;
+      final DateTime now = DateTime.now();
+      lastSavedLabel = '${now.hour.toString().padLeft(2, '0')}:'
+          '${now.minute.toString().padLeft(2, '0')}:'
+          '${now.second.toString().padLeft(2, '0')}';
+      if (!quiet) notifyListeners();
+      return true;
+    } catch (error) {
+      debugPrint('autosave failed: $error');
+      return false;
+    } finally {
+      _savingNow = false;
+    }
+  }
+
+  void startAutosave({Duration every = const Duration(seconds: 20)}) {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = Timer.periodic(every, (_) {
+      if (_dirty && !busy) saveNow();
+    });
+  }
+
+  void stopAutosave() {
+    _autosaveTimer?.cancel();
+    _autosaveTimer = null;
+  }
+
+  /// Reloads the last autosaved project, if there is one.
+  Future<bool> restoreAutosave() async {
+    try {
+      final Directory dir = await autosaveDir();
+      final Project? restored = await ProjectStore.load(dir);
+      if (restored == null) return false;
+      project.source?.dispose();
+      project = restored;
+      _past.clear();
+      _future.clear();
+      selectedLayerId = null;
+      tool = null;
+      resetView();
+      _revision++;
+      _photoKey = '';
+      _dirty = false;
+      await refresh(force: true);
+      return true;
+    } catch (error) {
+      debugPrint('restore failed: $error');
+      return false;
+    }
+  }
+
+  @override
+  void dispose() {
+    stopAutosave();
+    super.dispose();
   }
 
   /// Rebuild the preview image if anything changed.
@@ -256,8 +342,10 @@ class EditorController extends ChangeNotifier {
     resetView();
     _revision++;
     _photoKey = '';
+    _dirty = true;
     await refresh(force: true);
     busy = false;
+    startAutosave();
     notifyListeners();
   }
 

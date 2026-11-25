@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:get_thumbnail_video/index.dart';
 import 'package:get_thumbnail_video/video_thumbnail.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -54,6 +55,7 @@ class _EditorScreenState extends State<EditorScreen> {
   Offset _xformStartLocal = Offset.zero;
   Offset? _cropStart;
   Offset? _cropLast;
+  bool _hasAutosave = false;
   bool _overBin = false;
   int _cropHandle = -9;           // -9 none, -2 new, -1 move, 0..7 handles
   CropRect? _cropBase;
@@ -76,6 +78,9 @@ class _EditorScreenState extends State<EditorScreen> {
   void initState() {
     super.initState();
     c.addListener(_onChange);
+    c.autosaveExists().then((bool exists) {
+      if (mounted) setState(() => _hasAutosave = exists);
+    });
   }
 
   @override
@@ -132,11 +137,78 @@ class _EditorScreenState extends State<EditorScreen> {
 
   /* --------------------------------------------------------------------- */
 
+  Future<void> _handleBack() async {
+    if (c.project.source == null) {
+      SystemNavigator.pop();
+      return;
+    }
+    if (c.tool != null) {
+      c.setTool(null);
+      return;
+    }
+    final String? action = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: kPanel,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Save before leaving?',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          content: Text(
+            c.hasUnsavedWork
+                ? 'Your latest changes are not saved yet. Save them to the autosave slot, or discard and close.'
+                : 'Everything is already saved. Close Lumen?',
+            style: const TextStyle(fontSize: 12.5, color: Color(0xFF9A9AA8), height: 1.5),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('cancel'),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFF9A9AA8))),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('discard'),
+              child: const Text('Discard', style: TextStyle(color: Color(0xFFFF8A8A))),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop('save'),
+              child: const Text('Save', style: TextStyle(color: Color(0xFFB9AEFF))),
+            ),
+          ],
+        );
+      },
+    );
+    if (action == 'save') {
+      await c.saveNow(quiet: false);
+      SystemNavigator.pop();
+    } else if (action == 'discard') {
+      SystemNavigator.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (c.project.source == null) {
-      return Scaffold(backgroundColor: kBg, body: SafeArea(child: _buildHome()));
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (bool didPop, Object? result) {
+          if (!didPop) SystemNavigator.pop();
+        },
+        child: Scaffold(backgroundColor: kBg, body: SafeArea(child: _buildHome())),
+      );
     }
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) async {
+        if (didPop) return;
+        await _handleBack();
+      },
+      child: _buildEditor(),
+    );
+  }
+
+  Widget _buildEditor() {
     return Scaffold(
       backgroundColor: kBg,
       body: SafeArea(
@@ -233,6 +305,36 @@ class _EditorScreenState extends State<EditorScreen> {
                 _homeTile('Drive', Icons.cloud_outlined, _pickFromFiles),
               ],
             ),
+            if (_hasAutosave) ...<Widget>[
+              const SizedBox(height: 18),
+              GestureDetector(
+                onTap: () async {
+                  final bool ok = await c.restoreAutosave();
+                  if (!mounted) return;
+                  _toast(ok ? 'Restored your last session' : 'Nothing to restore');
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C1A33),
+                    borderRadius: BorderRadius.circular(13),
+                    border: Border.all(color: const Color(0xFF3B3170)),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      const Icon(Icons.history, size: 18, color: Color(0xFFB9AEFF)),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text('Resume last session',
+                            style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600)),
+                      ),
+                      const Icon(Icons.chevron_right, size: 18, color: Color(0xFF7A7A8A)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 22),
             _homeButton(
               label: 'Blank canvas',
@@ -770,7 +872,9 @@ class _EditorScreenState extends State<EditorScreen> {
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 Text(
-                  '${c.project.docW} × ${c.project.docH}',
+                  c.lastSavedLabel.isEmpty
+                      ? '${c.project.docW} × ${c.project.docH}'
+                      : '${c.project.docW} × ${c.project.docH} · saved ${c.lastSavedLabel}',
                   style: const TextStyle(fontSize: 9, color: Color(0xFF71717E)),
                 ),
               ],
