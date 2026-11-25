@@ -1611,7 +1611,7 @@ class _EditorScreenState extends State<EditorScreen> {
         body = const SizedBox.shrink();
     }
     final double sheetHeight =
-        math.min(430, math.max(300, MediaQuery.of(context).size.height * 0.46));
+        math.min(470, math.max(300, MediaQuery.of(context).size.height * 0.52));
     return Container(
       height: sheetHeight,
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),

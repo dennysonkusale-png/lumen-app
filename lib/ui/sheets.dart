@@ -293,8 +293,8 @@ class CropSheet extends StatelessWidget {
     const List<String> ratios = <String>[
       'Free', '1:1', '4:5', '3:4', '2:3', '9:16', '16:9', '3:2', '5:4'
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
       children: <Widget>[
         SheetHeader(
           title: 'Crop & Transform',
@@ -381,8 +381,8 @@ class RetouchSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Brush b = c.brush;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
       children: <Widget>[
         SheetHeader(
           title: 'Retouch',
@@ -674,8 +674,8 @@ class StickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
       children: <Widget>[
         SheetHeader(title: 'Stickers & Shapes', onClose: () => c.setTool(null)),
         const SectionLabel('Shapes'),
