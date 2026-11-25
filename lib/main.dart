@@ -2103,65 +2103,6 @@ class _CanvasPainter extends CustomPainter {
     canvas.restore();
 
     _paintSelection(canvas);
-  }
-
-  void _paintSelection(Canvas canvas) {
-    final double s = c.viewScale;
-    final Offset origin = c.docToScreen(0, 0);
-    final Layer? selected = c.selectedLayer;
-    if (selected != null) {
-      final double cx = origin.dx + selected.x * c.docW * s;
-      final double cy = origin.dy + selected.y * c.docH * s;
-      canvas.save();
-      canvas.translate(cx, cy);
-      canvas.rotate(selected.rotation * math.pi / 180.0);
-      final Rect box = Rect.fromCenter(
-        center: Offset.zero,
-        width: selected.w * c.docW * s,
-        height: selected.h * c.docH * s,
-      );
-      canvas.drawRect(
-        box,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5
-          ..color = const Color(0xE6FFFFFF),
-      );
-      // rotate handle
-      final Offset rotHandle = Offset(0, -box.height / 2 - 30);
-      canvas.drawLine(
-        Offset(0, -box.height / 2),
-        rotHandle,
-        Paint()
-          ..strokeWidth = 1.5
-          ..color = const Color(0xB3FFFFFF),
-      );
-      canvas.drawCircle(rotHandle, 9, Paint()..color = const Color(0xFF3ED598));
-      canvas.drawCircle(
-        rotHandle,
-        9,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5
-          ..color = const Color(0xFF1E7A55),
-      );
-      // corner handles
-      final List<Offset> corners = <Offset>[
-        box.topLeft, box.topRight, box.bottomRight, box.bottomLeft
-      ];
-      for (final Offset corner in corners) {
-        canvas.drawCircle(corner, 10, Paint()..color = const Color(0xFFFFFFFF));
-        canvas.drawCircle(
-          corner,
-          10,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5
-            ..color = const Color(0x66000000),
-        );
-      }
-      canvas.restore();
-    }
 
     // live mask preview while the Mask tool is open
     if (c.tool == 'mask' && c.showMaskWash && c.project.mask != null) {
@@ -2258,6 +2199,67 @@ class _CanvasPainter extends CustomPainter {
         }
       }
     }
+  }
+
+  void _paintSelection(Canvas canvas) {
+    final double s = c.viewScale;
+    final Offset origin = c.docToScreen(0, 0);
+    final Layer? selected = c.selectedLayer;
+    if (selected != null) {
+      final double cx = origin.dx + selected.x * c.docW * s;
+      final double cy = origin.dy + selected.y * c.docH * s;
+      canvas.save();
+      canvas.translate(cx, cy);
+      canvas.rotate(selected.rotation * math.pi / 180.0);
+      final Rect box = Rect.fromCenter(
+        center: Offset.zero,
+        width: selected.w * c.docW * s,
+        height: selected.h * c.docH * s,
+      );
+      canvas.drawRect(
+        box,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = const Color(0xE6FFFFFF),
+      );
+      // rotate handle
+      final Offset rotHandle = Offset(0, -box.height / 2 - 30);
+      canvas.drawLine(
+        Offset(0, -box.height / 2),
+        rotHandle,
+        Paint()
+          ..strokeWidth = 1.5
+          ..color = const Color(0xB3FFFFFF),
+      );
+      canvas.drawCircle(rotHandle, 9, Paint()..color = const Color(0xFF3ED598));
+      canvas.drawCircle(
+        rotHandle,
+        9,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5
+          ..color = const Color(0xFF1E7A55),
+      );
+      // corner handles
+      final List<Offset> corners = <Offset>[
+        box.topLeft, box.topRight, box.bottomRight, box.bottomLeft
+      ];
+      for (final Offset corner in corners) {
+        canvas.drawCircle(corner, 10, Paint()..color = const Color(0xFFFFFFFF));
+        canvas.drawCircle(
+          corner,
+          10,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..color = const Color(0x66000000),
+        );
+      }
+      canvas.restore();
+    }
+
+
   }
 
   void _paintCrop(Canvas canvas, Size size) {
