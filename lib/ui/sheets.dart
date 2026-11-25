@@ -894,7 +894,8 @@ class StickerSheet extends StatelessWidget {
           ],
         ),
         const SectionLabel('Stickers'),
-        Expanded(
+        SizedBox(
+          height: 196,
           child: GridView.builder(
             padding: const EdgeInsets.only(bottom: 8),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
