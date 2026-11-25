@@ -816,3 +816,16 @@ Future<ui.Image> buildThumb(Project project, FilterPreset preset, double maxEdge
   }
   return imageFromPixels(px, w, h);
 }
+
+
+/// Applies a filter preset to a decoded image. Used by the video renderer.
+Future<ui.Image> applyPresetToImage(
+    ui.Image source, FilterPreset preset, double amount) async {
+  final int w = source.width;
+  final int h = source.height;
+  final Uint8List px = await pixelsOf(source);
+  if (preset.id != 'none' && amount > 0) {
+    _applyPixels(px, w, h, Adjustments.zero(), preset, amount);
+  }
+  return imageFromPixels(px, w, h);
+}

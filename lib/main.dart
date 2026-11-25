@@ -15,6 +15,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:video_player/video_player.dart';
 
 import 'model.dart';
+import 'video_edit.dart';
 import 'pipeline.dart';
 import 'state.dart';
 import 'ui/sheets.dart';
@@ -410,6 +411,47 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _openVideo() async {
+    final String? mode = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: kPanel,
+      builder: (BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text('Video',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('Edit one frame, or grade the whole clip.',
+                style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C))),
+            const SizedBox(height: 14),
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop('frame'),
+              child: _videoOption(
+                Icons.crop_free,
+                'Edit a frame',
+                'Pull one still out and edit it like a photo',
+              ),
+            ),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop('clip'),
+              child: _videoOption(
+                Icons.movie_filter_outlined,
+                'Grade the whole clip',
+                'Apply a look to every frame and export a new MP4',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (mode == null) return;
+    if (mode == 'clip') {
+      await _openVideoLook();
+      return;
+    }
     try {
       final XFile? file = await ImagePicker().pickVideo(source: ImageSource.gallery);
       if (file == null) return;
@@ -437,6 +479,158 @@ class _EditorScreenState extends State<EditorScreen> {
     } catch (error) {
       _toast('Could not open that video');
       debugPrint('video failed: $error');
+    }
+  }
+
+  Widget _videoOption(IconData icon, String title, String subtitle) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C24),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kBorder),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 20, color: const Color(0xFFB9AEFF)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style: const TextStyle(fontSize: 10.5, color: Color(0xFF7E7E8C))),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right, size: 18, color: Color(0xFF5C5C6B)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openVideoLook() async {
+    final XFile? file = await ImagePicker().pickVideo(source: ImageSource.gallery);
+    if (file == null) return;
+    final String path = file.path;
+
+    const List<String> looks = <String>[
+      'none', 'vivid', 'golden', 'mono', 'moody', 'teal', 'faded'
+    ];
+    String chosen = 'vivid';
+    double strength = 0.85;
+
+    final bool? go = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: kPanel,
+      builder: (BuildContext context) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setSheet) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const Text('Grade the clip',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text(
+                'Every frame is re-rendered with the look you pick, up to 10 seconds '
+                'at 24 fps. The export has no sound track in this build.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF7E7E8C), height: 1.5),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  for (final String id in looks)
+                    PillButton(
+                      label: filterById(id).name,
+                      primary: chosen == id,
+                      onTap: () => setSheet(() => chosen = id),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SliderRow(
+                label: 'Strength',
+                value: strength * 100,
+                min: 20,
+                max: 100,
+                suffix: '${(strength * 100).round()}',
+                onChanged: (double v) => setSheet(() => strength = v / 100),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: PillButton(
+                      label: 'Cancel',
+                      onTap: () => Navigator.of(context).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: PillButton(
+                      label: 'Render MP4',
+                      primary: true,
+                      onTap: () => Navigator.of(context).pop(true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (go != true) return;
+    if (!mounted) return;
+
+    final ValueNotifier<double> progress = ValueNotifier<double>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => AlertDialog(
+        backgroundColor: kPanel,
+        title: const Text('Rendering clip',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        content: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (BuildContext context, double v, Widget? child) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              LinearProgressIndicator(value: v, color: kAccent, minHeight: 5),
+              const SizedBox(height: 10),
+              Text('${(v * 100).round()}%',
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF9A9AA8))),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final String? out = await VideoLookRenderer.render(
+      path: path,
+      preset: filterById(chosen),
+      strength: strength,
+      onProgress: (double p) => progress.value = p,
+    );
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    progress.dispose();
+
+    if (out == null) {
+      _toast('Could not render that clip');
+      return;
+    }
+    try {
+      await Share.shareXFiles(<XFile>[XFile(out)], text: 'Lumen clip');
+    } catch (_) {
+      _toast('Saved to $out');
     }
   }
 
