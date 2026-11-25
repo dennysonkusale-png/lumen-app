@@ -419,6 +419,9 @@ class CropRect {
 
 class Project {
   ui.Image? source;
+  /// When set, this project is a video: [source] holds the first frame for
+  /// anything that needs a still, and the viewport plays the clip underneath.
+  String? videoPath;
   int sourceW;
   int sourceH;
   CropRect crop;
@@ -436,6 +439,7 @@ class Project {
 
   Project({
     this.source,
+    this.videoPath,
     this.sourceW = 0,
     this.sourceH = 0,
     CropRect? crop,
@@ -460,6 +464,7 @@ class Project {
 
   Project copy() => Project(
         source: source,
+        videoPath: videoPath,
         sourceW: sourceW,
         sourceH: sourceH,
         crop: crop.copy(),

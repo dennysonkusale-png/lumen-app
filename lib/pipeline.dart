@@ -829,3 +829,23 @@ Future<ui.Image> applyPresetToImage(
   }
   return imageFromPixels(px, w, h);
 }
+
+
+/// Applies a project's adjustments, filter and smart-enhance LUT to one image.
+/// Used per frame when rendering a video project.
+Future<ui.Image> applyProjectToImage(Project project, ui.Image source) async {
+  final int w = source.width;
+  final int h = source.height;
+  final Uint8List px = await pixelsOf(source);
+  _applyPixels(px, w, h, project.adjust, filterById(project.filterId),
+      project.filterAmount);
+  final List<Uint8List>? lut = project.customLut;
+  if (lut != null) {
+    for (int i = 0; i < px.length; i += 4) {
+      px[i] = lut[0][px[i]];
+      px[i + 1] = lut[1][px[i + 1]];
+      px[i + 2] = lut[2][px[i + 2]];
+    }
+  }
+  return imageFromPixels(px, w, h);
+}

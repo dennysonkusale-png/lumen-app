@@ -10,7 +10,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:image/image.dart' as img;
 
 import 'model.dart';
+import 'package:get_thumbnail_video/index.dart';
+import 'package:get_thumbnail_video/video_thumbnail.dart';
 import 'project_io.dart';
+import 'video_edit.dart';
 import 'pipeline.dart';
 
 /// A single point in document space (crop pixels).
@@ -347,6 +350,54 @@ class EditorController extends ChangeNotifier {
     await refresh(force: true);
     busy = false;
     startAutosave();
+    notifyListeners();
+  }
+
+  /// Opens a video into the normal editor: the first frame becomes the still
+  /// that tools measure against, and the viewport plays the clip.
+  Future<void> loadVideo(String path, String name) async {
+    busy = true;
+    busyLabel = 'Opening video…';
+    notifyListeners();
+    try {
+      final Uint8List first = await VideoThumbnail.thumbnailData(
+        video: path,
+        imageFormat: ImageFormat.JPEG,
+        maxWidth: 1600,
+        quality: 92,
+        timeMs: 0,
+      );
+      final ui.Codec codec = await ui.instantiateImageCodec(first);
+      final ui.FrameInfo frame = await codec.getNextFrame();
+      final ui.Image image = frame.image;
+      project.source?.dispose();
+      project = Project(
+        source: image,
+        videoPath: path,
+        sourceW: image.width,
+        sourceH: image.height,
+        crop: CropRect(
+          x: 0,
+          y: 0,
+          w: image.width.toDouble(),
+          h: image.height.toDouble(),
+        ),
+        name: name,
+      );
+      _past.clear();
+      _future.clear();
+      selectedLayerId = null;
+      tool = null;
+      resetView();
+      _revision++;
+      _photoKey = '';
+      _dirty = true;
+      await refresh(force: true);
+      startAutosave();
+    } catch (error) {
+      debugPrint('open video failed: $error');
+    }
+    busy = false;
     notifyListeners();
   }
 
@@ -1195,6 +1246,27 @@ class EditorController extends ChangeNotifier {
   /* --------------------------------------------------------------------- */
 
   String? exportError;
+
+  /// Renders the video-backed project back out to MP4 with every edit baked in.
+  Future<String?> exportVideoProject({
+    void Function(double)? onProgress,
+  }) async {
+    busy = true;
+    busyLabel = 'Rendering video…';
+    notifyListeners();
+    exportError = null;
+    try {
+      final String? out = await VideoLookRenderer.renderProject(
+        project,
+        onProgress: onProgress,
+      );
+      if (out == null) exportError = 'Could not render that clip';
+      return out;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
 
   /// Renders the document to an MP4 at 1080 px on the long edge.
   /// [kenBurns] adds a slow zoom so a still looks alive.

@@ -16,7 +16,7 @@ import 'package:video_player/video_player.dart';
 
 import 'model.dart';
 import 'video_edit.dart';
-import 'video_editor.dart';
+import 'color_matrix.dart';
 import 'pipeline.dart';
 import 'state.dart';
 import 'ui/sheets.dart';
@@ -57,6 +57,8 @@ class _EditorScreenState extends State<EditorScreen> {
   Offset _xformStartLocal = Offset.zero;
   Offset? _cropStart;
   Offset? _cropLast;
+  VideoPlayerController? _video;
+  String? _videoFor;
   bool _hasAutosave = false;
   bool _overBin = false;
   int _cropHandle = -9;           // -9 none, -2 new, -1 move, 0..7 handles
@@ -87,6 +89,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    _video?.dispose();
     c.removeListener(_onChange);
     c.dispose();
     super.dispose();
@@ -210,7 +213,49 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  void _ensureVideo() {
+    final String? path = c.project.videoPath;
+    if (path == null) {
+      _video?.dispose();
+      _video = null;
+      _videoFor = null;
+      return;
+    }
+    if (_videoFor == path && _video != null) return;
+    _video?.dispose();
+    final VideoPlayerController ctrl = VideoPlayerController.file(File(path));
+    _video = ctrl;
+    _videoFor = path;
+    ctrl.initialize().then((_) {
+      ctrl.setLooping(true);
+      ctrl.play();
+      if (mounted) setState(() {});
+    });
+  }
+
+  Widget _videoSurface() {
+    final VideoPlayerController? ctrl = _video;
+    if (ctrl == null || !ctrl.value.isInitialized) {
+      return const Center(
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2.4, color: kAccent),
+        ),
+      );
+    }
+    return ColorFiltered(
+      colorFilter: ColorFilter.matrix(projectMatrix(
+        c.project.adjust,
+        filterById(c.project.filterId),
+        c.project.filterAmount,
+      )),
+      child: VideoPlayer(ctrl),
+    );
+  }
+
   Widget _buildEditor() {
+    _ensureVideo();
     return Scaffold(
       backgroundColor: kBg,
       body: SafeArea(
@@ -412,114 +457,11 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _openVideo() async {
-    final String? mode = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: kPanel,
-      builder: (BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            const Text('Video',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            const Text('Edit one frame, or grade the whole clip.',
-                style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C))),
-            const SizedBox(height: 14),
-            GestureDetector(
-              onTap: () => Navigator.of(context).pop('frame'),
-              child: _videoOption(
-                Icons.crop_free,
-                'Edit a frame',
-                'Pull one still out and edit it like a photo',
-              ),
-            ),
-            const SizedBox(height: 10),
-            GestureDetector(
-              onTap: () => Navigator.of(context).pop('clip'),
-              child: _videoOption(
-                Icons.movie_filter_outlined,
-                'Grade the whole clip',
-                'Apply a look to every frame and export a new MP4',
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (mode == null) return;
-    if (mode == 'clip') {
-      await _openVideoLook();
-      return;
-    }
-    try {
-      final XFile? file = await ImagePicker().pickVideo(source: ImageSource.gallery);
-      if (file == null) return;
-      final String path = file.path;
-
-      final VideoPlayerController probe = VideoPlayerController.file(File(path));
-      await probe.initialize();
-      final Duration total = probe.value.duration;
-      await probe.dispose();
-      if (total.inMilliseconds <= 0) {
-        _toast('Could not read that video');
-        return;
-      }
-      if (!mounted) return;
-      showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: kPanel,
-        isScrollControlled: true,
-        builder: (BuildContext context) => _VideoFrameSheet(
-          path: path,
-          durationMs: total.inMilliseconds,
-          controller: c,
-        ),
-      );
-    } catch (error) {
-      _toast('Could not open that video');
-      debugPrint('video failed: $error');
-    }
-  }
-
-  Widget _videoOption(IconData icon, String title, String subtitle) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1C24),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: kBorder),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, size: 20, color: const Color(0xFFB9AEFF)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(title,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(subtitle,
-                    style: const TextStyle(fontSize: 10.5, color: Color(0xFF7E7E8C))),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right, size: 18, color: Color(0xFF5C5C6B)),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openVideoLook() async {
     final XFile? file = await ImagePicker().pickVideo(source: ImageSource.gallery);
-    if (file == null || !mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => VideoEditorScreen(path: file.path),
-      ),
+    if (file == null) return;
+    await c.loadVideo(
+      file.path,
+      file.name.replaceAll(RegExp(r'\.[^.]+$'), ''),
     );
   }
 
@@ -1030,7 +972,24 @@ class _EditorScreenState extends State<EditorScreen> {
                 child: Container(
                   color: const Color(0xFF08080A),
                   child: SizedBox.expand(
-                    child: CustomPaint(painter: _CanvasPainter(c)),
+                    child: c.project.videoPath == null
+                        ? CustomPaint(painter: _CanvasPainter(c))
+                        : Stack(
+                            fit: StackFit.expand,
+                            children: <Widget>[
+                              Center(
+                                child: AspectRatio(
+                                  aspectRatio: c.project.docW / c.project.docH,
+                                  child: _videoSurface(),
+                                ),
+                              ),
+                              IgnorePointer(
+                                child: CustomPaint(
+                                  painter: _CanvasPainter(c, overlayOnly: true),
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
                 ),
               ),
@@ -1579,6 +1538,11 @@ class _EditorScreenState extends State<EditorScreen> {
                 _openLayers();
                 return;
               }
+              if (c.project.videoPath != null &&
+                  (id == 'crop' || id == 'retouch' || id == 'mask')) {
+                _toast('Not available for video yet');
+                return;
+              }
               c.setTool(on ? null : id);
             },
             child: Container(
@@ -1758,6 +1722,92 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  void _openVideoExport() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: kPanel,
+      builder: (BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text('Export video',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text(
+              'Every frame is re-rendered with your adjustments, filter and layers, '
+              'up to 10 seconds at 24 fps. The export has no sound track.',
+              style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C), height: 1.5),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: PillButton(
+                    label: 'Cancel',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: PillButton(
+                    label: 'Render MP4',
+                    primary: true,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _runVideoProjectExport();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runVideoProjectExport() async {
+    final ValueNotifier<double> progress = ValueNotifier<double>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => AlertDialog(
+        backgroundColor: kPanel,
+        title: const Text('Rendering video',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        content: ValueListenableBuilder<double>(
+          valueListenable: progress,
+          builder: (BuildContext context, double v, Widget? child) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              LinearProgressIndicator(value: v, color: kAccent, minHeight: 5),
+              const SizedBox(height: 10),
+              Text('${(v * 100).round()}%',
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF9A9AA8))),
+            ],
+          ),
+        ),
+      ),
+    );
+    final String? out = await c.exportVideoProject(
+      onProgress: (double p) => progress.value = p,
+    );
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    progress.dispose();
+    if (out == null) {
+      _toast(c.exportError ?? 'Video export failed');
+      return;
+    }
+    try {
+      await Share.shareXFiles(<XFile>[XFile(out)], text: c.project.name);
+    } catch (_) {
+      _toast('Saved to $out');
+    }
+  }
+
   String _exportDims(double longEdge) {
     final double dw = c.docW;
     final double dh = c.docH;
@@ -1769,6 +1819,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _openExport() {
+    if (c.project.videoPath != null) {
+      _openVideoExport();
+      return;
+    }
     bool png = false;
     bool video = false;
     double videoSeconds = 5;
@@ -1995,8 +2049,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
 class _CanvasPainter extends CustomPainter {
   final EditorController c;
+  final bool overlayOnly;
 
-  _CanvasPainter(this.c) : super(repaint: c);
+  _CanvasPainter(this.c, {this.overlayOnly = false}) : super(repaint: c);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2006,6 +2061,15 @@ class _CanvasPainter extends CustomPainter {
     }
     final ui.Image? photo = c.photo;
     if (photo == null) return;
+    if (overlayOnly) {
+      final Offset origin = c.docToScreen(0, 0);
+      canvas.save();
+      canvas.translate(origin.dx, origin.dy);
+      drawLayers(canvas, c.project, c.viewScale);
+      canvas.restore();
+      _paintSelection(canvas);
+      return;
+    }
 
     final double s = c.viewScale;
     final Offset origin = c.docToScreen(0, 0);
@@ -2038,6 +2102,12 @@ class _CanvasPainter extends CustomPainter {
     drawLayers(canvas, c.project, s);
     canvas.restore();
 
+    _paintSelection(canvas);
+  }
+
+  void _paintSelection(Canvas canvas) {
+    final double s = c.viewScale;
+    final Offset origin = c.docToScreen(0, 0);
     final Layer? selected = c.selectedLayer;
     if (selected != null) {
       final double cx = origin.dx + selected.x * c.docW * s;
