@@ -113,6 +113,80 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
+  Future<void> _openImageMenu() async {
+    final String? choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: kPanel,
+      builder: (BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text('Add a photo',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('Keep what you have, or start over with this photo.',
+                style: TextStyle(fontSize: 11.5, color: Color(0xFF7E7E8C))),
+            const SizedBox(height: 14),
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop('layer'),
+              child: _sheetOption(
+                Icons.layers_outlined,
+                'Add as a layer',
+                'Keeps your canvas and drops the photo on top',
+              ),
+            ),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () => Navigator.of(context).pop('replace'),
+              child: _sheetOption(
+                Icons.swap_horiz,
+                'Replace the canvas',
+                'Discards the current document and opens this photo',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'layer') {
+      await _addPhotoLayer();
+    } else if (choice == 'replace') {
+      await _pick(ImageSource.gallery);
+    }
+  }
+
+  Widget _sheetOption(IconData icon, String title, String subtitle) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C24),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kBorder),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 20, color: const Color(0xFFB9AEFF)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(title,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style: const TextStyle(fontSize: 10.5, color: Color(0xFF7E7E8C))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _addPhotoLayer() async {
     try {
       final XFile? file = await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -121,7 +195,8 @@ class _EditorScreenState extends State<EditorScreen> {
       final ui.Codec codec = await ui.instantiateImageCodec(bytes);
       final ui.FrameInfo frame = await codec.getNextFrame();
       c.addImageLayer(frame.image, file.name.replaceAll(RegExp(r'\.[^.]+$'), ''));
-      _toast('Photo added as a layer');
+      c.setTool('sticker');
+      _toast('Added as a layer — options below');
     } catch (error) {
       _toast('Could not add that photo');
       debugPrint('add photo failed: $error');
@@ -901,7 +976,7 @@ class _EditorScreenState extends State<EditorScreen> {
       ),
       child: Row(
         children: <Widget>[
-          icon(Icons.photo_library_outlined, () => _pick(ImageSource.gallery)),
+          icon(Icons.photo_library_outlined, _openImageMenu),
           icon(Icons.photo_camera_outlined, () => _pick(ImageSource.camera)),
           Expanded(
             child: Column(

@@ -800,6 +800,31 @@ class StickerSheet extends StatelessWidget {
           ),
         ],
         if (c.selectedLayer != null && c.selectedLayer!.type == LayerType.image) ...<Widget>[
+          const SectionLabel('Photo layer'),
+          SliderRow(
+            label: 'Opacity',
+            value: c.selectedLayer!.opacity * 100,
+            min: 0,
+            max: 100,
+            defaultValue: 100,
+            onChanged: (double v) =>
+                c.mutateLayer(c.selectedLayer!, (Layer l) => l.opacity = v / 100),
+          ),
+          SliderRow(
+            label: 'Fade edge',
+            value: c.selectedLayer!.feather * 100,
+            min: 0,
+            max: 60,
+            defaultValue: 0,
+            onChanged: (double v) =>
+                c.mutateLayer(c.selectedLayer!, (Layer l) => l.feather = v / 100),
+          ),
+          ChipRow(
+            labels: const <String>['Square mask', 'Round mask'],
+            selected: c.selectedLayer!.cropShape == 'ellipse' ? 1 : 0,
+            onSelected: (int i) => c.mutateLayer(
+                c.selectedLayer!, (Layer l) => l.cropShape = i == 0 ? 'rect' : 'ellipse'),
+          ),
           const SectionLabel('Crop image'),
           const Padding(
             padding: EdgeInsets.only(bottom: 6),
@@ -822,20 +847,6 @@ class StickerSheet extends StatelessWidget {
                 child: PillButton(label: 'Reset crop', onTap: c.resetLayerCrop),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          ChipRow(
-            labels: const <String>['Rectangle', 'Ellipse'],
-            selected: c.selectedLayer!.cropShape == 'ellipse' ? 1 : 0,
-            onSelected: (int i) => c.setCropShape(i == 0 ? 'rect' : 'ellipse'),
-          ),
-          SliderRow(
-            label: 'Feather',
-            value: c.selectedLayer!.feather * 100,
-            min: 0,
-            max: 60,
-            defaultValue: 0,
-            onChanged: (double v) => c.setCropFeather(v / 100),
           ),
         ],
         if (c.selectedLayer != null && c.selectedLayer!.type == LayerType.shape) ...<Widget>[
