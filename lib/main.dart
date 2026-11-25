@@ -16,6 +16,7 @@ import 'package:video_player/video_player.dart';
 
 import 'model.dart';
 import 'video_edit.dart';
+import 'video_editor.dart';
 import 'pipeline.dart';
 import 'state.dart';
 import 'ui/sheets.dart';
@@ -514,124 +515,12 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Future<void> _openVideoLook() async {
     final XFile? file = await ImagePicker().pickVideo(source: ImageSource.gallery);
-    if (file == null) return;
-    final String path = file.path;
-
-    const List<String> looks = <String>[
-      'none', 'vivid', 'golden', 'mono', 'moody', 'teal', 'faded'
-    ];
-    String chosen = 'vivid';
-    double strength = 0.85;
-
-    final bool? go = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: kPanel,
-      builder: (BuildContext context) => StatefulBuilder(
-        builder: (BuildContext context, StateSetter setSheet) => Padding(
-          padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const Text('Grade the clip',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              const Text(
-                'Every frame is re-rendered with the look you pick, up to 10 seconds '
-                'at 24 fps. The export has no sound track in this build.',
-                style: TextStyle(fontSize: 11, color: Color(0xFF7E7E8C), height: 1.5),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: <Widget>[
-                  for (final String id in looks)
-                    PillButton(
-                      label: filterById(id).name,
-                      primary: chosen == id,
-                      onTap: () => setSheet(() => chosen = id),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              SliderRow(
-                label: 'Strength',
-                value: strength * 100,
-                min: 20,
-                max: 100,
-                suffix: '${(strength * 100).round()}',
-                onChanged: (double v) => setSheet(() => strength = v / 100),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: PillButton(
-                      label: 'Cancel',
-                      onTap: () => Navigator.of(context).pop(false),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: PillButton(
-                      label: 'Render MP4',
-                      primary: true,
-                      onTap: () => Navigator.of(context).pop(true),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
+    if (file == null || !mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => VideoEditorScreen(path: file.path),
       ),
     );
-    if (go != true) return;
-    if (!mounted) return;
-
-    final ValueNotifier<double> progress = ValueNotifier<double>(0);
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) => AlertDialog(
-        backgroundColor: kPanel,
-        title: const Text('Rendering clip',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-        content: ValueListenableBuilder<double>(
-          valueListenable: progress,
-          builder: (BuildContext context, double v, Widget? child) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              LinearProgressIndicator(value: v, color: kAccent, minHeight: 5),
-              const SizedBox(height: 10),
-              Text('${(v * 100).round()}%',
-                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF9A9AA8))),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    final String? out = await VideoLookRenderer.render(
-      path: path,
-      preset: filterById(chosen),
-      strength: strength,
-      onProgress: (double p) => progress.value = p,
-    );
-    if (!mounted) return;
-    Navigator.of(context).pop();
-    progress.dispose();
-
-    if (out == null) {
-      _toast('Could not render that clip');
-      return;
-    }
-    try {
-      await Share.shareXFiles(<XFile>[XFile(out)], text: 'Lumen clip');
-    } catch (_) {
-      _toast('Saved to $out');
-    }
   }
 
   void _openTemplates() {
