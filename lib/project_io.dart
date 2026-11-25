@@ -29,6 +29,7 @@ class ProjectStore {
     final Map<String, dynamic> json = <String, dynamic>{
       'version': version,
       'name': project.name,
+      'videoPath': project.videoPath,
       'sourceW': project.sourceW,
       'sourceH': project.sourceH,
       'filterId': project.filterId,
@@ -147,6 +148,7 @@ class ProjectStore {
         sourceW: json['sourceW'] as int,
         sourceH: json['sourceH'] as int,
         name: json['name'] as String? ?? 'Recovered',
+        videoPath: json['videoPath'] as String?,
         crop: CropRect(
           x: (c['x'] as num).toDouble(),
           y: (c['y'] as num).toDouble(),

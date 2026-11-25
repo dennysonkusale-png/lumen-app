@@ -213,6 +213,25 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  bool get _videoReady =>
+      _video != null && _video!.value.isInitialized;
+
+  bool get _playing => _video?.value.isPlaying ?? false;
+
+  void _togglePlay() {
+    final VideoPlayerController? ctrl = _video;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+    if (ctrl.value.isPlaying) {
+      ctrl.pause();
+    } else {
+      if (ctrl.value.position >= ctrl.value.duration) {
+        ctrl.seekTo(Duration.zero);
+      }
+      ctrl.play();
+    }
+    setState(() {});
+  }
+
   void _ensureVideo() {
     final String? path = c.project.videoPath;
     if (path == null) {
@@ -227,8 +246,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _video = ctrl;
     _videoFor = path;
     ctrl.initialize().then((_) {
-      ctrl.setLooping(true);
-      ctrl.play();
+      ctrl.setLooping(false);
       if (mounted) setState(() {});
     });
   }
@@ -977,11 +995,12 @@ class _EditorScreenState extends State<EditorScreen> {
                         : Stack(
                             fit: StackFit.expand,
                             children: <Widget>[
-                              Center(
-                                child: AspectRatio(
-                                  aspectRatio: c.project.docW / c.project.docH,
-                                  child: _videoSurface(),
-                                ),
+                              Positioned(
+                                left: c.docToScreen(0, 0).dx,
+                                top: c.docToScreen(0, 0).dy,
+                                width: c.docW * c.viewScale,
+                                height: c.docH * c.viewScale,
+                                child: _videoSurface(),
                               ),
                               IgnorePointer(
                                 child: CustomPaint(
@@ -994,6 +1013,28 @@ class _EditorScreenState extends State<EditorScreen> {
                 ),
               ),
             ),
+            if (c.project.videoPath != null && _videoReady)
+              Positioned(
+                left: 14,
+                bottom: 16,
+                child: GestureDetector(
+                  onTap: _togglePlay,
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: const Color(0xCC1C1C24),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF3A3A48)),
+                    ),
+                    child: Icon(
+                      _playing ? Icons.pause : Icons.play_arrow,
+                      color: const Color(0xFFEDEDF3),
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
             if (c.selectedLayer != null && !c.croppingLayer && !c.cropping)
               Positioned(
                 left: 0,

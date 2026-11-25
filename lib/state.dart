@@ -253,6 +253,12 @@ class EditorController extends ChangeNotifier {
 
   /// Rebuild the preview image if anything changed.
   Future<void> refresh({bool force = false}) async {
+    // A video project draws the clip itself; the still is only a fallback, so
+    // there is no point re-running the pixel pass on every slider tick.
+    if (project.videoPath != null && !force && _photo != null) {
+      notifyListeners();
+      return;
+    }
     final double ps = previewScale;
     final String key = '$_revision@$ps';
     if (!force && key == _photoKey && _photo != null) {
